@@ -12,20 +12,30 @@ const blank: Attendee = {
   resumePublic: false, discoverable: false, unavailable: [],
 };
 
-export function ProfileForm({ initial, onSave, onStepChange }: {
+export type ProfileStep = 'about' | 'availability';
+
+// A résumé picked in an earlier visit. Files cannot be persisted, so only the name survives;
+// `onServer` is true when that visit saved, meaning the server already holds its text.
+export type PreviousResume = { name: string; onServer: boolean };
+
+export function ProfileForm({ initial, previousResume, step, onChange, onSave, onStepChange }: {
   initial?: Attendee;
+  previousResume?: PreviousResume;
+  step: ProfileStep;
+  onChange: (profile: Attendee) => void;
   onSave: (profile: Attendee) => Promise<void>;
-  onStepChange: () => void;
+  onStepChange: (step: ProfileStep) => void;
 }) {
   const [profile, setProfile] = useState(initial ?? blank);
-  const [step, setStep] = useState<'about' | 'availability'>('about');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   function update(changes: Partial<Attendee>) {
-    setProfile((current) => ({ ...current, ...changes }));
+    const next = { ...profile, ...changes };
+    setProfile(next);
+    onChange(next);
   }
 
   async function pickResume() {
@@ -58,14 +68,16 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
     setError('');
   }
 
-  function changeStep(next: typeof step) {
+  function changeStep(next: ProfileStep) {
     setError('');
-    setStep(next);
-    onStepChange();
+    onStepChange(next);
   }
 
+  // A saved résumé still counts: the server kept its text and reuses it when none is sent.
+  const resumeOnServer = !profile.resume && previousResume?.onServer;
+
   function continueToAvailability() {
-    if (!profile.name.trim() || (!profile.bio.trim() && !profile.resume)) {
+    if (!profile.name.trim() || (!profile.bio.trim() && !profile.resume && !resumeOnServer)) {
       setError('Enter your name and add a bio or choose a résumé.');
       return;
     }
@@ -112,8 +124,15 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
         <Field label="What do you want to see?" multiline value={profile.lookingFor} onChangeText={(lookingFor) => update({ lookingFor })} placeholder="Talks, people, or topics you’re here for" maxLength={2000} />
         <Field label="LinkedIn profile URL (optional)" value={profile.linkedin} onChangeText={(linkedin) => update({ linkedin })} autoCapitalize="none" keyboardType="url" maxLength={300} />
         <Copy>Your résumé is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
+        {previousResume && !profile.resume ? (
+          <Message>
+            {previousResume.onServer
+              ? `Your résumé ${previousResume.name} is already on file from your last save. Re-attach it only if it changed.`
+              : `Files don’t survive between visits, so ${previousResume.name} needs to be re-attached before you save.`}
+          </Message>
+        ) : null}
         <View style={styles.row}>
-          <Action title="Choose résumé PDF" onPress={pickResume} secondary />
+          <Action title={previousResume && !profile.resume ? 'Re-attach résumé PDF' : 'Choose résumé PDF'} onPress={pickResume} secondary />
           {profile.resume ? <Action title="Remove résumé" onPress={() => update({ resume: undefined, resumePublic: false })} secondary /> : null}
         </View>
         {profile.resume ? (

@@ -7,6 +7,7 @@ import { confirmLiveSchedule, createLiveConference, parseLiveSchedule } from './
 import type { OrganizerSession, ParsedTalk } from './api';
 import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
+import { organizerSession } from './session';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 type ScheduleAsset = { uri: string; name: string };
@@ -24,19 +25,28 @@ function displayTime(timestamp: string) {
 }
 
 export function Organizer() {
+  // A refresh must not lock the organizer out of the conference they just created: the
+  // session, parsed draft, and published flag are restored from this browser's storage.
+  const [stored] = useState(organizerSession.load);
   const [name, setName] = useState('');
-  const [session, setSession] = useState<OrganizerSession>();
+  const [session, setSession] = useState<OrganizerSession | undefined>(stored && {
+    conferenceId: stored.conferenceId, organizerToken: stored.organizerToken, name: stored.name,
+  });
   const [sourceUrl, setSourceUrl] = useState('');
   const [asset, setAsset] = useState<ScheduleAsset>();
-  const [draft, setDraft] = useState<{ talks: ParsedTalk[]; warnings: string[] }>();
-  const [published, setPublished] = useState(false);
+  const [draft, setDraft] = useState(stored?.draft);
+  const [published, setPublished] = useState(stored?.published ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   async function createConference() {
     if (!name.trim()) { setError('Enter a conference name first.'); return; }
     setBusy(true); setError('');
-    try { setSession(await createLiveConference(name.trim())); }
+    try {
+      const created = await createLiveConference(name.trim());
+      setSession(created);
+      organizerSession.save(created);
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not create the conference.'); }
     finally { setBusy(false); }
   }
@@ -50,7 +60,11 @@ export function Organizer() {
   async function parseSchedule() {
     if (!session) return;
     setBusy(true); setError('');
-    try { setDraft(await parseLiveSchedule(session, sourceUrl.trim() || undefined, asset)); }
+    try {
+      const parsed = await parseLiveSchedule(session, sourceUrl.trim() || undefined, asset);
+      setDraft(parsed);
+      organizerSession.save({ ...session, draft: parsed });
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not parse the schedule.'); }
     finally { setBusy(false); }
   }
@@ -58,12 +72,18 @@ export function Organizer() {
   async function publish() {
     if (!session || !draft?.talks.length) return;
     setBusy(true); setError('');
-    try { await confirmLiveSchedule(session, draft.talks); setPublished(true); }
+    try {
+      await confirmLiveSchedule(session, draft.talks);
+      setPublished(true);
+      organizerSession.save({ ...session, draft, published: true });
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not publish the schedule.'); }
     finally { setBusy(false); }
   }
 
+  // "Start a new conference": forget this browser's organizer session entirely.
   function reset() {
+    organizerSession.clear();
     setPublished(false); setSession(undefined); setDraft(undefined);
     setAsset(undefined); setSourceUrl(''); setName('');
   }
@@ -86,7 +106,7 @@ export function Organizer() {
             <Copy>Scan with your phone camera to open the join link, or type the code at check-in.</Copy>
           </View>
         </View>
-        <Action title="Create another conference" onPress={reset} secondary />
+        <Action title="Start a new conference" onPress={reset} secondary />
       </Flow>
     );
   }
@@ -106,6 +126,7 @@ export function Organizer() {
           {asset ? <Copy>Selected: {asset.name}</Copy> : null}
         </View>
         <Action title={busy ? 'Parsing schedule…' : 'Parse schedule'} onPress={parseSchedule} disabled={busy || (!sourceUrl.trim() && !asset)} />
+        <Action title="Start a new conference" onPress={reset} secondary disabled={busy} />
       </Section>}
       {error ? <Message error>{error}</Message> : null}
       {draft ? <Section>
