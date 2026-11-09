@@ -23,9 +23,11 @@ export type ParsedTalk = {
 };
 
 function venueMinutes(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return 0;
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date(timestamp));
+  }).formatToParts(date);
   const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
   return value('hour') * 60 + value('minute');
 }
