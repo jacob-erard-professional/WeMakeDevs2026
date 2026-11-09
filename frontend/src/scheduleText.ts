@@ -12,7 +12,12 @@ export function validScheduleDate(date: string) {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString().startsWith(date);
 }
 
-function utcTime(date: string, minutes: number) {
+export function venueTimestamp(date: string, minutes: number): string | undefined {
+  if (!validScheduleDate(date)) return undefined;
+  if (minutes === 1440) {
+    const next = new Date(Date.parse(`${date}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    return venueTimestamp(next, 0);
+  }
   const hour = String(Math.floor(minutes / 60)).padStart(2, '0');
   const minute = String(minutes % 60).padStart(2, '0');
   const local = `${date}T${hour}:${minute}`;
@@ -31,8 +36,8 @@ export function parsePastedSchedule(text: string, date: string): { talks: Parsed
   const parsed = parseSchedule(text);
   const talks: ParsedTalk[] = [];
   for (const talk of parsed.talks) {
-    const start = utcTime(date, talk.start);
-    const end = utcTime(date, talk.end);
+    const start = venueTimestamp(date, talk.start);
+    const end = venueTimestamp(date, talk.end);
     if (!start || !end || Date.parse(end) <= Date.parse(start)) {
       parsed.warnings.push(`Line ${Number(talk.id) + 1} has a time that is ambiguous or unavailable in Mountain Time.`);
       continue;

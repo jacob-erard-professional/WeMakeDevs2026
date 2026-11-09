@@ -275,6 +275,10 @@ class Blockout(BaseModel):
     end_time: datetime
 
 
+class PeopleSearch(BaseModel):
+    note: str = Field(default="", max_length=500)
+
+
 class SaveUserData(BaseModel):
     conference_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=160)
@@ -366,7 +370,9 @@ class CreateConference(BaseModel):
 # --- Elasticsearch access ----------------------------------------------------------------------
 
 
-async def es_call(operation: str, fn: Callable[[], T], **attributes: Any) -> T:
+async def es_call(
+    operation: str, fn: Callable[[], T], *, redact_error: bool = False, **attributes: Any
+) -> T:
     """Run a blocking Elasticsearch call off the event loop inside a span.
 
     NotFoundError -> 404, any other failure -> 503. Attributes must not contain user content.
@@ -382,9 +388,12 @@ async def es_call(operation: str, fn: Callable[[], T], **attributes: Any) -> T:
             span.set_status(Status(StatusCode.ERROR, "not_found"))
             raise HTTPException(404, "Not found") from exc
         except Exception as exc:
-            span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
-            logger.exception("es_operation=%s outcome=error", operation)
+            if redact_error:
+                logger.error("es_operation=%s outcome=error type=%s", operation, type(exc).__name__)
+            else:
+                span.record_exception(exc)
+                logger.exception("es_operation=%s outcome=error", operation)
             raise HTTPException(503, "Conference data store unavailable") from None
 
 
@@ -532,7 +541,9 @@ async def recommended_schedules(profile: dict[str, Any]) -> list[dict[str, Any]]
     return build_recommended_schedules(talks)
 
 
-async def recommended_people(profile: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+async def recommended_people(
+    profile: dict[str, Any], note: str = ""
+) -> dict[str, list[dict[str, Any]]]:
     """Run the Q1 similarity and Q2 two-sided matching searches from vector-matching.md."""
     conference_id = profile["conference_id"]
     attendee_id = profile["attendee_id"]
@@ -586,17 +597,29 @@ async def recommended_people(profile: dict[str, Any]) -> dict[str, list[dict[str
         similar = _hits_with_reason(hits, "profile")
 
     match_retrievers: list[dict[str, Any]] = []
-    if profile.get("looking_for"):
+    looking_for = note or profile.get("looking_for", "")
+    if looking_for:
         match_retrievers.append(
             {
                 "retriever": {
                     "standard": {
                         "query": semantic_candidate(
-                            "can_help_with", profile["looking_for"], conference_id, attendee_id
+                            "can_help_with", looking_for, conference_id, attendee_id
                         )
                     }
                 },
-                "weight": 0.7,
+                "weight": 0.55 if note else 0.7,
+            }
+        )
+    if note:
+        match_retrievers.append(
+            {
+                "retriever": {
+                    "standard": {
+                        "query": semantic_candidate("profile", note, conference_id, attendee_id)
+                    }
+                },
+                "weight": 0.3,
             }
         )
     if profile.get("can_help_with"):
@@ -609,7 +632,7 @@ async def recommended_people(profile: dict[str, Any]) -> dict[str, list[dict[str
                         )
                     }
                 },
-                "weight": 0.3,
+                "weight": 0.15 if note else 0.3,
             }
         )
     matches: list[dict[str, Any]] = []
@@ -631,6 +654,7 @@ async def recommended_people(profile: dict[str, Any]) -> dict[str, list[dict[str
                     "fields": {"can_help_with": {"type": "semantic", "number_of_fragments": 1}}
                 },
             )["hits"]["hits"],
+            redact_error=bool(note),
         )
         matches = _hits_with_reason(hits, "can_help_with")
     return {"similar": similar, "matches": matches}
@@ -883,6 +907,19 @@ async def get_people_recommendations(
     if not profile.get("discovery_opt_in"):
         return {"similar": [], "matches": []}
     return await recommended_people(profile)
+
+
+@app.post("/conferences/{conference_id}/people/recommend")
+async def search_people_recommendations(
+    conference_id: str,
+    payload: PeopleSearch,
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    """Refine suggestions using a request-scoped note without changing the profile."""
+    profile = await claimed_profile(conference_id, None, identity)
+    if not profile.get("discovery_opt_in"):
+        return {"similar": [], "matches": []}
+    return await recommended_people(profile, payload.note.strip())
 
 
 async def conference_talk(conference_id: str, talk_id: str) -> dict[str, Any]:

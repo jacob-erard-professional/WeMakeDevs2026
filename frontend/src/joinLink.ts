@@ -8,7 +8,7 @@ import { Platform } from 'react-native';
 
 const FALLBACK_SITE_URL = 'https://wearedevs.cnh.radarhq.io';
 
-export type JoinStep = 'about' | 'availability' | 'plan';
+export type JoinStep = 'about' | 'availability' | 'plan' | 'schedule';
 
 function siteUrl(): string {
   const configured = process.env.EXPO_PUBLIC_SITE_URL;
@@ -54,5 +54,5 @@ export function parseJoinPath(path: string): { code: string; step: JoinStep } | 
   const code = match ? decodeCode(match[1]) : null;
   if (!code) return null;
   const segment = match?.[2];
-  return { code, step: segment === 'availability' || segment === 'plan' ? segment : 'about' };
+  return { code, step: segment === 'availability' || segment === 'plan' || segment === 'schedule' ? segment : 'about' };
 }

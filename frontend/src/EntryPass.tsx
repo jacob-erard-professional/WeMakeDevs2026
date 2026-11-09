@@ -2,12 +2,12 @@ import { useMemo, useState } from 'react';
 import { create } from 'qrcode';
 import { Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 
 import { Action, colors, Copy, Heading, Label, Message, styles } from './ui';
 
-function roundedCode(link: string) {
-  const { modules } = create(link, { errorCorrectionLevel: 'M' });
+function roundedCode(link: string, branded: boolean) {
+  const { modules } = create(link, { errorCorrectionLevel: branded ? 'H' : 'M' });
   const { size } = modules;
   const dark = (y: number, x: number) => y >= 0 && x >= 0 && y < size && x < size && modules.get(y, x);
   const paths: string[] = [];
@@ -37,14 +37,30 @@ function roundedCode(link: string) {
   return { path: paths.join(''), extent: size + 8 };
 }
 
-function PassCode({ link, size }: { link: string; size: number }) {
-  const { path, extent } = useMemo(() => roundedCode(link), [link]);
+function PassCode({ link, size, branded = false }: { link: string; size: number; branded?: boolean }) {
+  const { path, extent } = useMemo(() => roundedCode(link, branded), [link, branded]);
+  const center = (extent - 8) / 2;
+  const badgeSize = Math.min(center * 0.36, 9);
 
   return (
     <View style={pass.frame}>
       <Svg width={size} height={size} viewBox={`-4 -4 ${extent} ${extent}`}>
         <Rect x={-4} y={-4} width={extent} height={extent} fill={colors.white} />
         <Path d={path} fill="#000000" />
+        {branded && (
+          <G translateX={center - badgeSize / 2} translateY={center - badgeSize / 2} scale={badgeSize / 100}>
+            <Circle cx={50} cy={50} r={50} fill="#FFFFFF" />
+            <Circle cx={50} cy={50} r={45} fill="none" stroke="#000000" strokeWidth={2.5} />
+            <Circle cx={50} cy={32} r={19} fill="none" stroke="#000000" strokeWidth={4} />
+            <Path
+              d="M47 53 Q50 48 53 53 L67 80 Q70 88 62 85 L50 81 L38 85 Q30 88 33 80 Z"
+              fill="none"
+              stroke="#000000"
+              strokeWidth={4}
+              strokeLinejoin="round"
+            />
+          </G>
+        )}
       </Svg>
     </View>
   );
@@ -159,7 +175,7 @@ export function EntryPass({ name, code, link, details, onReset, onTrySample }: {
             <Label>{onTrySample ? 'Sample QR · preview only' : 'Scan to join'}</Label>
             <Text accessibilityRole="header" style={[styles.heading, styles.largeHeading, pass.title]}>{name}</Text>
             <View accessible accessibilityRole="image" accessibilityLabel={`Join QR code for ${name}`}>
-              <PassCode link={link} size={qrSize} />
+              <PassCode link={link} size={qrSize} branded />
             </View>
             {passInfo(true)}
             {message ? <Message>{message}</Message> : null}

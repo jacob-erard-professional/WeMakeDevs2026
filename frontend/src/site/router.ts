@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
-export type Page = 'home' | 'events' | 'talks' | 'organizers' | 'join';
+export type Page = 'home' | 'events' | 'talks' | 'organizers' | 'join' | 'myConferences';
 
 export const paths: Record<Page, string> = {
   home: '/',
@@ -11,6 +11,7 @@ export const paths: Record<Page, string> = {
   talks: '/talks',
   organizers: '/organizers',
   join: '/join',
+  myConferences: '/my-conferences',
 };
 
 // /join and /join/<code> both belong to the attendee flow; unknown paths fall back to home.
