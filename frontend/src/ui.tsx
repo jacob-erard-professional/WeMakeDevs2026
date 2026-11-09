@@ -1,16 +1,16 @@
-import type { PropsWithChildren } from 'react';
-import { useState } from 'react';
+import type { ComponentRef, PropsWithChildren } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
 export const colors = {
-  ink: '#18253B',
-  muted: '#4A5160',
-  paper: '#F8F4E9',
+  ink: '#191924',
+  muted: '#565666',
+  paper: '#FAF9FD',
   white: '#FFFFFF',
-  accent: '#973A2A',
-  pale: '#EDE6D5',
-  line: '#AAA28F',
+  accent: '#5040AF',
+  pale: '#EEEBF9',
+  line: '#8B849E',
   error: '#922D24',
 };
 
@@ -22,8 +22,20 @@ export function Copy({ children }: PropsWithChildren) {
   return <Text style={styles.copy}>{children}</Text>;
 }
 
-export function Heading({ children }: PropsWithChildren) {
-  return <Text accessibilityRole="header" style={styles.heading}>{children}</Text>;
+export function Heading({ children, large }: PropsWithChildren<{ large?: boolean }>) {
+  const ref = useRef<ComponentRef<typeof Text>>(null);
+  const focusOnWeb = large && Platform.OS === 'web';
+  const focusProps = focusOnWeb ? { tabIndex: -1 } : {};
+  useEffect(() => {
+    if (focusOnWeb) ref.current?.focus();
+  }, [children, focusOnWeb]);
+
+  return (
+    <Text ref={ref} accessibilityRole="header" {...focusProps}
+      style={[styles.heading, large && styles.largeHeading]}>
+      {children}
+    </Text>
+  );
 }
 
 export function Section({ children }: PropsWithChildren) {
@@ -68,7 +80,6 @@ export function Action({ title, onPress, secondary, selected, disabled }: {
       style={({ pressed }) => [
         styles.button,
         secondary && styles.secondary,
-        selected && styles.selected,
         focused && styles.focused,
         (pressed || disabled) && styles.dimmed,
       ]}
@@ -90,21 +101,21 @@ export function Message({ children, error }: PropsWithChildren<{ error?: boolean
 }
 
 export const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
-  label: { color: colors.accent, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
+  stack: { gap: 18 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 18, rowGap: 4 },
+  label: { color: colors.accent, fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
   copy: { color: colors.muted, fontSize: 16, lineHeight: 24 },
-  heading: { color: colors.ink, fontSize: 24, fontWeight: '700' },
-  section: { borderTopWidth: 1, borderColor: colors.line, paddingVertical: 16, gap: 12 },
-  field: { gap: 6 },
+  heading: { color: colors.ink, fontSize: 23, fontWeight: '600', letterSpacing: -0.35 },
+  largeHeading: { fontSize: 40, fontWeight: '700', letterSpacing: -1.5 },
+  section: { width: '100%', maxWidth: 650, gap: 18 },
+  field: { gap: 7 },
   fieldLabel: { color: colors.ink, fontWeight: '600', fontSize: 16 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.line, padding: 12, color: colors.ink, backgroundColor: colors.white, fontSize: 16 },
+  input: { minHeight: 48, borderBottomWidth: 1, borderColor: colors.line, padding: 12, color: colors.ink, backgroundColor: colors.pale, fontSize: 16, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
   multiline: { minHeight: 96, textAlignVertical: 'top' },
-  button: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.ink, borderWidth: 1, borderColor: colors.ink, alignSelf: 'flex-start', maxWidth: '100%' },
+  button: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 10, backgroundColor: colors.accent, borderRadius: 8, alignSelf: 'flex-start', maxWidth: '100%' },
   buttonText: { color: colors.white, fontWeight: '700', fontSize: 16 },
-  secondary: { backgroundColor: 'transparent', borderColor: colors.line },
-  secondaryText: { color: colors.ink },
-  selected: { backgroundColor: colors.pale },
+  secondary: { backgroundColor: 'transparent', paddingHorizontal: 0, borderRadius: 0 },
+  secondaryText: { color: colors.accent },
   selectedText: { textDecorationLine: 'underline' },
   focused: { outlineColor: colors.ink, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
   dimmed: { opacity: 0.72 },

@@ -4,15 +4,21 @@ import { View } from 'react-native';
 
 import { formatTime, parseTime } from './conference';
 import type { Attendee } from './conference';
-import { Action, Copy, Field, Heading, Message, Section, styles } from './ui';
+import { Flow } from './Flow';
+import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 const blank: Attendee = {
   name: '', bio: '', interests: '', linkedin: '', resumeName: '',
   resumePublic: false, discoverable: false, unavailable: [],
 };
 
-export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (profile: Attendee) => void }) {
+export function ProfileForm({ initial, onSave, onStepChange }: {
+  initial?: Attendee;
+  onSave: (profile: Attendee) => void;
+  onStepChange: () => void;
+}) {
   const [profile, setProfile] = useState(initial ?? blank);
+  const [step, setStep] = useState<'about' | 'availability'>('about');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
@@ -48,7 +54,13 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
     setError('');
   }
 
-  function save() {
+  function changeStep(next: typeof step) {
+    setError('');
+    setStep(next);
+    onStepChange();
+  }
+
+  function continueToAvailability() {
     if (!profile.name.trim() || (!profile.bio.trim() && !profile.resumeName)) {
       setError('Enter your name and add a bio or choose a résumé.');
       return;
@@ -58,18 +70,24 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
       setError('Enter a LinkedIn profile URL such as https://www.linkedin.com/in/sample or leave it blank.');
       return;
     }
+    update({ name: profile.name.trim(), linkedin });
+    changeStep('availability');
+  }
+
+  function save() {
     if (start.trim() || end.trim()) {
       setError('Add the pending time block or clear both time fields before continuing.');
       return;
     }
-    onSave({ ...profile, name: profile.name.trim(), linkedin });
+    onSave(profile);
   }
 
   return (
-    <View style={styles.stack}>
-      <Heading>Tell us about yourself</Heading>
-      <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
-      <Section>
+    <Flow step={step}>
+      {step === 'about' ? <Section>
+        <Label>Step 1 of 2 · About you</Label>
+        <Heading large>Tell us about yourself</Heading>
+        <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
         <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
         <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
         <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
@@ -92,10 +110,12 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
         <Action title={profile.discoverable ? 'Discovery on' : 'Discovery off'} selected={profile.discoverable}
           onPress={() => update({ discoverable: !profile.discoverable })} secondary />
         <Copy>Discovery controls whether your profile may appear in other attendees’ suggestions. You can browse suggestions either way.</Copy>
-      </Section>
-      <Section>
-        <Heading>When are you unavailable?</Heading>
-        <Copy>Add same-day blocks in Mountain Time using 24-hour HH:MM.</Copy>
+        {error ? <Message error>{error}</Message> : null}
+        <Action title="Continue to availability" onPress={continueToAvailability} />
+      </Section> : <Section>
+        <Label>Step 2 of 2 · Availability</Label>
+        <Heading large>Make time for what matters</Heading>
+        <Copy>Block out any times you’re busy, or continue if you’re free all day. Use Mountain Time in 24-hour HH:MM format.</Copy>
         <Field label="Unavailable from" value={start} onChangeText={setStart} placeholder="11:00" maxLength={5} />
         <Field label="Unavailable until" value={end} onChangeText={setEnd} placeholder="12:00" maxLength={5} />
         <Action title="Add unavailable time" onPress={addBlock} secondary />
@@ -108,9 +128,12 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
             </View>
           );
         })}
-      </Section>
-      {error ? <Message error>{error}</Message> : null}
-      <Action title="See my recommendations" onPress={save} />
-    </View>
+        {error ? <Message error>{error}</Message> : null}
+        <View style={styles.row}>
+          <Action title="See my recommendations" onPress={save} />
+          <Action title="Back to profile" onPress={() => changeStep('about')} secondary />
+        </View>
+      </Section>}
+    </Flow>
   );
 }

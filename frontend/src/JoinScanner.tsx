@@ -26,7 +26,7 @@ export function JoinScanner({ onScan, onClose }: { onScan: (code: string) => voi
 
   return (
     <Section>
-      <Heading>Scan a conference QR</Heading>
+      <Heading large>Scan a conference QR</Heading>
       <Copy>Point your camera at the organizer’s QR code. You can also type the code printed beside it.</Copy>
       {permission?.granted && !cameraError ? (
         <View style={scannerStyles.preview}>
