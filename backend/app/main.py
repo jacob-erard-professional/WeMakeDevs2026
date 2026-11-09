@@ -1230,7 +1230,10 @@ async def confirm_schedule(
         batch = actions[i : i + BULK_BATCH_SIZE]
         resp = await es_call(
             "confirm_schedule",
-            lambda batch=batch: es.bulk(operations=batch, refresh="wait_for"),
+            # semantic_text embeds every talk on write (~3.4 s per 50); 5 s is far too short.
+            lambda batch=batch: es.options(request_timeout=60).bulk(
+                operations=batch, refresh="wait_for"
+            ),
             **{"db.elasticsearch.index": "talks", "conference.talk_count": len(batch) // 2},
         )
         body = getattr(resp, "body", resp)
