@@ -1,7 +1,7 @@
 // A conference landing page with separate attendee and organizer entry points.
 import { useContext, useState } from 'react';
 import type { PropsWithChildren } from 'react';
-import { Animated, Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useReduceMotion } from '../Flow';
 import { Action, Copy, Label, colors, styles } from '../ui';
@@ -56,11 +56,11 @@ function BandAction({ title, onPress }: { title: string; onPress: () => void }) 
 }
 
 export function Landing({ navigate }: { navigate: (path: string) => void }) {
-  const stage = heroPhotos[0];
+  const hero = Platform.OS === 'web' ? heroPhotos[0] : heroPhotos[1];
 
   return (
     <View>
-      <Band photo={stage} tall>
+      <Band photo={hero} tall>
         <Text style={band.label}>Conference Connections</Text>
         <Text accessibilityRole="header" style={band.headline}>Make more of your conference.</Text>
         <Text style={band.lede}>

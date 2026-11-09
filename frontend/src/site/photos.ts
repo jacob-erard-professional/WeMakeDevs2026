@@ -1,13 +1,12 @@
-// Landing-page photography. All photos are from Unsplash under the Unsplash License, which
-// allows free use and hotlinking from images.unsplash.com. Verified to return HTTP 200 on 2026-11-09.
-// Each photo carries a fallback colour so headline text stays readable if the image fails.
+// The web landing uses the team photo. The native landing uses the credited conference photo.
 
 export type Photo = {
   id: string;
   src: string;
   alt: string;
-  photographer: string;
-  pageUrl: string;
+  // Unsplash photos are credited in the footer; our own team photo has no credit line.
+  photographer?: string;
+  pageUrl?: string;
   fallback: string;
 };
 
@@ -16,6 +15,12 @@ function unsplash(id: string, width = 1800): string {
 }
 
 export const heroPhotos: Photo[] = [
+  {
+    id: 'team',
+    src: '/hackathon-team.jpg',
+    alt: 'The Conference Connections team working together in Salt Lake City',
+    fallback: '#1E1B3A',
+  },
   {
     id: 'stage',
     src: unsplash('1582192730841-2a682d7375f9'),

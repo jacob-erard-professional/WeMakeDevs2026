@@ -11,7 +11,7 @@ Use this table to discuss UI needs. The paths come from the initial frontend bri
 | Resolve a conference join link | `GET /conferences/{slug}` |
 | Save attendee profile | `POST /conferences/{id}/profiles` |
 | Get recommended talks | `GET /conferences/{id}/talks/recommend?profile_id=…` |
-| Get the proposed schedule | `GET /conferences/{id}/schedules?profile_id=…` |
+| Get the proposed schedule | `GET /conferences/{id}/schedules?profile_id=…` — returns up to three relevance-weighted, non-overlapping options |
 | Refresh recommended people | `GET /conferences/{id}/people/recommend?profile_id=…` |
 | Request a connection | `POST /conferences/{id}/connections` |
 

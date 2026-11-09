@@ -224,7 +224,7 @@ __marimo__/
 .radar.log
 .backend-*.pid
 elastic-start-local/
-.demo-tokens.json
+scripts/.seed-organizer.json
 
 # Claude Code agent worktrees
 .claude/worktrees/
