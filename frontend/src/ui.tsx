@@ -1,6 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
 export const colors = {
@@ -53,11 +53,14 @@ export function Action({ title, onPress, secondary, selected, disabled }: {
   disabled?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
+  const toggleState = Platform.OS === 'web'
+    ? { 'aria-pressed': selected, accessibilityState: { disabled } }
+    : { accessibilityState: { selected, disabled } };
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected, disabled }}
+      {...toggleState}
       disabled={disabled}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
@@ -70,7 +73,9 @@ export function Action({ title, onPress, secondary, selected, disabled }: {
         (pressed || disabled) && styles.dimmed,
       ]}
     >
-      <Text style={[styles.buttonText, (secondary || selected) && styles.secondaryText]}>{title}</Text>
+      <Text style={[styles.buttonText, (secondary || selected) && styles.secondaryText, selected && styles.selectedText]}>
+        {title}
+      </Text>
     </Pressable>
   );
 }
@@ -100,6 +105,7 @@ export const styles = StyleSheet.create({
   secondary: { backgroundColor: colors.white },
   secondaryText: { color: colors.green },
   selected: { backgroundColor: colors.pale },
+  selectedText: { textDecorationLine: 'underline' },
   focused: { outlineColor: colors.ink, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
   dimmed: { opacity: 0.72 },
   message: { fontSize: 16, lineHeight: 22, color: colors.green },
