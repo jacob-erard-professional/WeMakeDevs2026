@@ -8,6 +8,7 @@ import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
+import { clearJoinPath, joinCodeFromLocation, parseJoinCode } from './src/joinLink';
 import { Organizer } from './src/Organizer';
 import { ProfileForm } from './src/ProfileForm';
 import { Recommendations } from './src/Recommendations';
@@ -17,15 +18,21 @@ function JoinConference({ conferences, onJoin }: {
   conferences: Conference[];
   onJoin: (conference: Conference) => void;
 }) {
-  const [code, setCode] = useState('');
+  const [linkCode] = useState(joinCodeFromLocation);
+  const [code, setCode] = useState(linkCode ?? '');
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
 
   function join(value: string) {
-    const conference = conferences.find((item) => item.code === value.trim().toLowerCase());
-    if (conference) onJoin(conference);
+    // Accepts a bare code or a scanned/pasted /join/<code> link.
+    const parsed = parseJoinCode(value);
+    const conference = parsed ? conferences.find((item) => item.code === parsed) : undefined;
+    if (conference) { clearJoinPath(); onJoin(conference); }
     else setError('This code doesn’t match a conference in this session. Check the code or try the sample conference.');
   }
+
+  // Web: opened via a /join/<code> link (e.g. from the organizer QR), so join right away.
+  useEffect(() => { if (linkCode) join(linkCode); }, []);
 
   return (
     <Flow step={scanning ? 'scanner' : 'code'} style={scanning ? undefined : layout.entry}>

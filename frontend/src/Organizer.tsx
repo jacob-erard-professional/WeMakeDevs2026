@@ -6,6 +6,7 @@ import { formatTime, parseSchedule } from './conference';
 import type { Conference } from './conference';
 import { sampleSchedule } from './demoConference';
 import { Flow } from './Flow';
+import { joinUrl } from './joinLink';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conference['talks']) => Conference }) {
@@ -20,13 +21,14 @@ export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conf
         <Label>ATTENDEE ENTRY PASS</Label>
         <Heading large>{published.name}</Heading>
         <View style={passStyles.pass}>
-          <View accessible accessibilityRole="image" accessibilityLabel={`Conference QR code for ${published.code}`}>
-            <QRCode value={published.code} size={132} quietZone={28} />
+          <View accessible accessibilityRole="image" accessibilityLabel={`QR code linking to ${joinUrl(published.code)}`}>
+            <QRCode value={joinUrl(published.code)} size={132} quietZone={28} />
           </View>
           <View style={passStyles.details}>
             <Label>JOIN CODE</Label>
             <Text selectable style={passStyles.code}>{published.code}</Text>
-            <Copy>Scan in the mobile app or type the code at check-in.</Copy>
+            <Text selectable style={passStyles.link}>{joinUrl(published.code)}</Text>
+            <Copy>Scan with your phone camera to open the join link, or type the code at check-in.</Copy>
           </View>
         </View>
         <Copy>Demo events are available in this app session. Joining a newly created event on another device requires the live backend.</Copy>
@@ -74,4 +76,5 @@ const passStyles = StyleSheet.create({
   pass: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 20, rowGap: 12 },
   details: { flexGrow: 1, flexBasis: 185, gap: 6, paddingVertical: 12 },
   code: { color: colors.ink, fontSize: 32, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  link: { color: colors.muted, fontSize: 13 },
 });
