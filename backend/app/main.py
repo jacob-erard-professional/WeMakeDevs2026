@@ -13,7 +13,7 @@ from uuid import uuid4
 
 import qrcode
 from elasticsearch import Elasticsearch, NotFoundError
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, HttpUrl
 
