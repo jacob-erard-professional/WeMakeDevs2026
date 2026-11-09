@@ -1,7 +1,7 @@
 import type { ComponentRef, PropsWithChildren } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { TextInputProps } from 'react-native';
+import type { StyleProp, TextInputProps, TextStyle } from 'react-native';
 
 export const colors = {
   ink: '#191924',
@@ -28,7 +28,7 @@ export function Copy({ children }: PropsWithChildren) {
   return <Text style={styles.copy}>{children}</Text>;
 }
 
-export function Heading({ children, large }: PropsWithChildren<{ large?: boolean }>) {
+export function Heading({ children, large, style }: PropsWithChildren<{ large?: boolean; style?: StyleProp<TextStyle> }>) {
   const ref = useRef<ComponentRef<typeof Text>>(null);
   const focusOnWeb = large && Platform.OS === 'web';
   const focusProps = focusOnWeb ? { tabIndex: -1 } : {};
@@ -38,7 +38,7 @@ export function Heading({ children, large }: PropsWithChildren<{ large?: boolean
 
   return (
     <Text ref={ref} accessibilityRole="header" {...focusProps}
-      style={[styles.heading, large && styles.largeHeading]}>
+      style={[styles.heading, large && styles.largeHeading, style]}>
       {children}
     </Text>
   );

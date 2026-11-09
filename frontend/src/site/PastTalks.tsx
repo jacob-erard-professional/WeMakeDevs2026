@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Field, Heading, Label, Message } from '../ui';
+import { Action, Copy, Field, Heading, Label, Message } from '../ui';
 import { SampleBadge, TalkCard, page } from './PastEvents';
 import type { PastTalk } from './sampleEvents';
 import { eventName, loadPastTalks } from './sampleEvents';
@@ -19,7 +19,7 @@ function Chip({ title, selected, onPress }: { title: string; selected: boolean; 
   );
 }
 
-export function PastTalks() {
+export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }) {
   const [talks, setTalks] = useState<PastTalk[]>();
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState('');
@@ -42,6 +42,8 @@ export function PastTalks() {
     <Container style={page.block}>
       <Label>Past talks</Label>
       <Heading large>Talks from events on the platform.</Heading>
+      <Copy>Looking for recordings related to a session? Start with your conference schedule.</Copy>
+      <Action title="Browse my event schedule" onPress={onBrowseSchedule} secondary />
       <SampleBadge />
       <Field label="Search talks, speakers, or events" value={query} onChangeText={setQuery} autoCorrect={false} />
       {tracks.length ? (

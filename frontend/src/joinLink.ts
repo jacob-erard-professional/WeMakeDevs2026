@@ -33,17 +33,3 @@ export function parseJoinCode(value: string): string | null {
     return null;
   }
 }
-
-// Web only: the code in the current page's /join/<code> path, if any.
-export function joinCodeFromLocation(): string | undefined {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
-  return parseJoinCode(window.location.pathname) ?? undefined;
-}
-
-// Web only: drop the code from /join/<code> after a successful join so a remount of the join
-// screen (e.g. "Switch conference") or a reload does not re-join. Stays on /join so the site
-// router keeps showing the attendee flow. replaceState adds no history entry.
-export function clearJoinPath(): void {
-  if (Platform.OS !== 'web' || typeof window === 'undefined' || !JOIN_PATH.test(window.location.pathname)) return;
-  window.history.replaceState(null, '', '/join');
-}

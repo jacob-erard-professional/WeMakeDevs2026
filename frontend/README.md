@@ -1,10 +1,12 @@
 # Conference frontend
 
-Standalone React Native and TypeScript app for conference planning and attendee discovery. Demo data and edits stay in the running session.
+React Native and TypeScript app for conference planning and attendee discovery.
 
 Choose **Join sample conference** to try a profile, schedule, talk suggestions, and people recommendations. Refresh the People view to simulate another attendee arriving.
 
-Choose **Organizer** to preview and publish a pasted schedule. The entry pass shows a QR code and the equivalent text code. On Android or iOS, choose **Scan QR code** at attendee check-in and allow camera access, or type the code. Web check-in accepts text. Newly published demo events resolve within the same app session. Joining them from another device requires the live backend.
+Choose **I am an organizer** to enter event details and import a link, image, PDF, or structured text schedule. Publishing through FastAPI creates an attendee link. Tap the QR to present it full screen and share the link from the presentation. Attendees can follow the link in a browser, type the event code, or scan it from the native app. The event schedule opens session details and can look up similar recordings after attendee check-in.
+
+Organizer publishing and live conference links require a reachable FastAPI instance. See the [API configuration and backend handoff](docs/integration.md).
 
 From the repository root in Command Prompt, using Node.js 24 and npm:
 

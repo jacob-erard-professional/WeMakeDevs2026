@@ -49,6 +49,7 @@ export function SiteShell({ page, navigate, scrollRef, children }: PropsWithChil
   const { width } = useWindowDimensions();
   const compact = width < 720;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(0);
 
   function go(target: Page) {
     setMenuOpen(false);
@@ -66,9 +67,7 @@ export function SiteShell({ page, navigate, scrollRef, children }: PropsWithChil
           <NavLink title="Conference Connections" brand current={page === 'home'} onPress={() => go('home')} />
           {!compact ? <View style={shell.navLinks}>{links}</View> : null}
           <View style={shell.navActions}>
-            <Pressable accessibilityRole="button" onPress={() => go('join')} style={({ pressed }) => [shell.joinButton, pressed && shell.dimmed]}>
-              <Text style={shell.joinText}>Join an event</Text>
-            </Pressable>
+            <NavLink title="Join event" current={page === 'join'} onPress={() => go('join')} />
             {compact ? (
               <Pressable accessibilityRole="button" accessibilityLabel={menuOpen ? 'Close menu' : 'Open menu'}
                 aria-expanded={menuOpen} onPress={() => setMenuOpen((open) => !open)} style={shell.menuButton}>
@@ -81,10 +80,11 @@ export function SiteShell({ page, navigate, scrollRef, children }: PropsWithChil
       </View>
 
       <Animated.ScrollView ref={scrollRef as never} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}
+        onLayout={(event) => setViewportHeight(event.nativeEvent.layout.height)}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         contentContainerStyle={shell.body}>
         <ScrollOffset.Provider value={scrollY}>
-          <View style={shell.page}>{children}</View>
+          <View style={{ minHeight: viewportHeight }}>{children}</View>
         </ScrollOffset.Provider>
         <Footer onNavigate={go} />
       </Animated.ScrollView>
@@ -110,10 +110,10 @@ function Footer({ onNavigate }: { onNavigate: (page: Page) => void }) {
               <Text accessibilityRole="link" style={shell.creditLink} onPress={() => Linking.openURL(photo.pageUrl)}>
                 {photo.photographer}
               </Text>
-              {index < heroPhotos.length - 2 ? ', ' : index === heroPhotos.length - 2 ? ' and ' : ''}
+              {index < heroPhotos.length - 1 ? ', ' : ''}
             </Text>
           ))}
-          . Demo session: nothing here is stored.
+          .
         </Text>
       </Container>
     </View>
@@ -131,14 +131,10 @@ const shell = StyleSheet.create({
   navCurrent: { color: colors.onNight, textDecorationLine: 'underline' },
   brand: { color: colors.onNight, fontSize: 18, fontWeight: '800', letterSpacing: -0.5 },
   focused: { outlineColor: colors.glow, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
-  joinButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: colors.glow, borderRadius: 999 },
-  joinText: { color: colors.night, fontWeight: '800', fontSize: 15 },
   menuButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.onNightMuted },
   menuText: { color: colors.onNight, fontWeight: '700', fontSize: 15 },
   menu: { paddingTop: 8, gap: 2 },
-  dimmed: { opacity: 0.8 },
   body: { flexGrow: 1 },
-  page: { flexGrow: 1 },
   container: { width: '100%', maxWidth: 1180, alignSelf: 'center', paddingHorizontal: 24 },
   footer: { backgroundColor: colors.night, paddingVertical: 36, marginTop: 48 },
   footerInner: { gap: 20 },
