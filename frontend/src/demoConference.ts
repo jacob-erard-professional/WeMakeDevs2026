@@ -1,5 +1,5 @@
 import { parseSchedule } from './conference';
-import type { Conference } from './conference';
+import type { Attendee, Conference } from './conference';
 
 export const sampleSchedule = [
   '10:00 | 10:45 | Building accessible internal platforms | Accessibility | Summit Room',
@@ -10,9 +10,22 @@ export const sampleSchedule = [
 ].join('\n');
 
 export const demoConference: Conference = {
-  name: 'Cloud Native Hackathon',
+  name: 'Cloud Native Conference',
   code: 'cloud-native',
+  sample: true,
   talks: parseSchedule(sampleSchedule).talks,
+};
+
+export const sampleAttendee: Attendee = {
+  name: 'Taylor Morgan',
+  email: '',
+  bio: 'I work on developer tools and help teams make their platforms easier to use.',
+  interests: 'Kubernetes, Observability, Accessibility',
+  lookingFor: 'Practical sessions and people working on internal platforms.',
+  linkedin: '',
+  resumePublic: false,
+  discoverable: false,
+  unavailable: [],
 };
 
 export const demoPeople = [

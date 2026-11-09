@@ -10,6 +10,7 @@ export type PastTalk = {
   track: string;
   time: string;
   abstract: string;
+  details?: string;
 };
 
 export type PastEvent = {
@@ -31,7 +32,12 @@ const events: PastEvent[] = [
     attendees: 1840,
     summary: 'Two days of platform engineering, observability, and Kubernetes operations talks across four tracks.',
     talks: [
-      { id: 'cns-1', eventId: 'cloud-native-summit-2025', title: 'Debugging eBPF Programs in Production Without Losing Your Mind', speakers: ['Priya Raman'], track: 'Observability', time: 'Tue 10:00 MT', abstract: 'A field guide to tracing kernel-side failures when the only signal you have is a dropped packet counter.' },
+      {
+        id: 'cns-1', eventId: 'cloud-native-summit-2025', title: 'Debugging eBPF Programs in Production Without Losing Your Mind',
+        speakers: ['Priya Raman'], track: 'Observability', time: 'Tue 10:00 MT',
+        abstract: 'A field guide to tracing kernel-side failures when the only signal you have is a dropped packet counter.',
+        details: 'Follow a production incident from the first alert to the failing hook. The walkthrough covers checking verifier output, reading map counters, and comparing trace data before and after a rollout. Some Linux networking experience is helpful.',
+      },
       { id: 'cns-2', eventId: 'cloud-native-summit-2025', title: 'Platform Teams Are Product Teams', speakers: ['Marcus Oyelaran', 'Lena Fischer'], track: 'Platform Engineering', time: 'Tue 11:15 MT', abstract: 'How two platform teams rebuilt their roadmap around internal customer interviews and shipped fewer, better golden paths.' },
       { id: 'cns-3', eventId: 'cloud-native-summit-2025', title: 'Vector Search for Operators: Finding the Runbook You Forgot You Wrote', speakers: ['Dmitri Volkov'], track: 'Data', time: 'Tue 14:00 MT', abstract: 'Embedding incident timelines and runbooks so on-call engineers get the right doc in the first thirty seconds.' },
       { id: 'cns-4', eventId: 'cloud-native-summit-2025', title: 'Scaling GitOps Past 500 Clusters', speakers: ['Aisha Bello'], track: 'Platform Engineering', time: 'Wed 09:30 MT', abstract: 'Fleet management patterns, drift detection, and the policy guardrails that kept a multi-region rollout boring.' },

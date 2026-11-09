@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Field, Heading, Label, Message } from '../ui';
+import { Action, Field, Heading, Message, styles } from '../ui';
 import { SampleBadge, TalkCard, page } from './PastEvents';
 import type { PastTalk } from './sampleEvents';
 import { eventName, loadPastTalks } from './sampleEvents';
@@ -19,7 +19,7 @@ function Chip({ title, selected, onPress }: { title: string; selected: boolean; 
   );
 }
 
-export function PastTalks() {
+export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }) {
   const [talks, setTalks] = useState<PastTalk[]>();
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState('');
@@ -40,9 +40,7 @@ export function PastTalks() {
 
   return (
     <Container style={page.block}>
-      <Label>Past talks</Label>
-      <Heading large>Talks from events on the platform.</Heading>
-      <SampleBadge />
+      <Heading large>Search Talks</Heading>
       <Field label="Search talks, speakers, or events" value={query} onChangeText={setQuery} autoCorrect={false} />
       {tracks.length ? (
         <View accessibilityLabel="Filter by track" style={page.filters}>
@@ -50,6 +48,10 @@ export function PastTalks() {
           {tracks.map((item) => <Chip key={item} title={item} selected={track === item} onPress={() => setTrack(track === item ? undefined : item)} />)}
         </View>
       ) : null}
+      <View style={styles.row}>
+        <SampleBadge />
+        <Action title="Browse my event schedule" onPress={onBrowseSchedule} secondary />
+      </View>
       {failed ? <Message error>Couldn't load past talks. Try again in a moment.</Message> : null}
       {!talks && !failed ? <Message>Loading talks…</Message> : null}
       {talks ? <Message>{visible.length === 0 ? 'No talks match these filters.' : `${visible.length} of ${talks.length} talks`}</Message> : null}

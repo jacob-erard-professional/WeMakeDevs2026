@@ -3,25 +3,27 @@ import { StyleSheet, View } from 'react-native';
 
 import { buildSchedule, formatTime, matchingTopics, recommendTalks } from './conference';
 import type { Attendee, Conference } from './conference';
-import { demoConference, demoPeople } from './demoConference';
+import { demoPeople } from './demoConference';
 import { Flow } from './Flow';
-import { Action, Copy, Heading, Label, Message, styles } from './ui';
+import { ScheduleBrowser } from './ScheduleBrowser';
+import { Action, Copy, Heading, Label, Message, TalkDetails, styles } from './ui';
 
-const sections = ['My schedule', 'Talks', 'People'] as const;
+const sections = ['My schedule', 'Event schedule', 'Talks', 'People'] as const;
 type Section = typeof sections[number];
 
-export function Recommendations({ conference, profile, requested, onRequest, onEdit }: {
+export function Recommendations({ conference, profile, attendeeToken, requested, onRequest, onEdit }: {
   conference: Conference;
   profile: Attendee;
+  attendeeToken?: string;
   requested: string[];
   onRequest: (id: string) => void;
-  onEdit: () => void;
+  onEdit: (talkId?: string) => void;
 }) {
   const [section, setSection] = useState<Section>('My schedule');
   const [refreshed, setRefreshed] = useState(false);
   const talks = recommendTalks(conference.talks, profile);
   const shownTalks = section === 'My schedule' ? buildSchedule(talks) : talks;
-  const people = conference.code === demoConference.code
+  const people = conference.sample
     ? demoPeople.slice(0, refreshed ? demoPeople.length : 2)
       .map((person) => ({ ...person, shared: matchingTopics(profile, person.topics) }))
       .sort((a, b) => b.shared.length - a.shared.length)
@@ -33,10 +35,12 @@ export function Recommendations({ conference, profile, requested, onRequest, onE
       <Copy>Welcome, {profile.name}. Here’s what fits your day.</Copy>
       <View style={styles.row}>
         {sections.map((item) => <Action key={item} title={item} selected={section === item} onPress={() => setSection(item)} secondary />)}
-        <Action title="Edit profile" onPress={onEdit} secondary />
+        <Action title="Edit profile" onPress={() => onEdit()} secondary />
       </View>
       <Flow step={section} style={program.results}>
-        {section === 'People' ? (
+        {section === 'Event schedule' ? (
+          <ScheduleBrowser conference={conference} attendeeToken={attendeeToken} onProfile={onEdit} />
+        ) : section === 'People' ? (
           <>
             <Heading>People to meet</Heading>
             <Action title="Refresh people" onPress={() => setRefreshed(true)} secondary />
@@ -68,6 +72,7 @@ export function Recommendations({ conference, profile, requested, onRequest, onE
                 <View style={program.talk}>
                   <Heading>{talk.title}</Heading>
                   <Copy>{talk.matched ? `Matches your interest in ${talk.track}.` : `Explore ${talk.track} during a time you’re available.`}</Copy>
+                  {talk.abstract ? <TalkDetails title={talk.title} abstract={talk.abstract} /> : null}
                 </View>
               </View>
             ))}
