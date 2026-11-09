@@ -25,7 +25,7 @@ kubectl config use-context "kind-$CLUSTER" >/dev/null
 # Strips surrounding single/double quotes. Never echoes the value.
 env_value() {
   [ -f "$ENV_FILE" ] || return 0
-  grep -m1 -E "^[[:space:]]*$1=" "$ENV_FILE" \
+  { grep -m1 -E "^[[:space:]]*$1=" "$ENV_FILE" || true; } \
     | sed -E "s/^[[:space:]]*$1=//; s/^[[:space:]]+//; s/[[:space:]]+\$//; s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/"
 }
 
