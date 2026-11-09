@@ -193,7 +193,11 @@ async def lifespan(_: FastAPI):
         retry_task.cancel()
 
 
-app = FastAPI(title="Conference API", version="0.1.0", lifespan=lifespan)
+# Behind the public nginx the API is under /api (prefix stripped); ROOT_PATH lets /docs find
+# openapi.json there.
+app = FastAPI(
+    title="Conference API", version="0.1.0", lifespan=lifespan, root_path=os.getenv("ROOT_PATH", "")
+)
 FastAPIInstrumentor.instrument_app(app)
 
 
