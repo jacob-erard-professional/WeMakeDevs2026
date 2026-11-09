@@ -1,6 +1,6 @@
-# Endpoint Contract Template: `/upload-schedule`
+# Endpoint Contract: `/upload-schedule`
 
-**Status:** Draft; route and schema are subject to merge. **TBD** means the decision is intentionally open.
+**Status:** Implemented.
 
 ## Purpose and actor
 
@@ -8,31 +8,33 @@ Allow an organizer to provide a schedule URL or upload a supported image/documen
 
 ## Request
 
-- HTTP method and content type: **TBD** (URL, multipart upload, or both)
-- Conference scope and organizer authorization: **TBD**
-- Supported URL schemes/domains: **TBD**
-- Supported file formats, maximum size, and number of files: **TBD**
-- Parser selection, timeout, and callback/asynchronous behavior: **TBD**
+- HTTP: `POST /upload-schedule`, `multipart/form-data`.
+- Required `conference_id`; provide exactly one of `source_url` or `file`.
+- Requires `Authorization: Bearer <ORGANIZER_API_KEY>`.
+- URL inputs must use HTTPS, resolve only to public IP addresses, and may not redirect.
+- Supported files: PDF, DOCX, PNG, JPEG, WEBP, HTML and plain text; 20 MiB default maximum.
+- PDF/DOCX/text/HTML are converted to text; image inputs use OpenRouter vision extraction. Extraction timeout is 45 seconds.
 
 ## Response
 
-- Status code and schema for extracted draft: **TBD**
-- Extraction confidence, warnings, and fields needing review: **TBD**
-- Draft identifier and expiry, if applicable: **TBD**
+- Returns `201` with `draft_id`, `conference_id`, `status: review`, and editable `title`, `timezone`, and `talks` JSON.
+- The schedule includes `warnings`; timezone assumptions are flagged for review. Each talk includes `talk_id`, `title`, `abstract`, `tags`, `speaker_names`, timezone-aware `start_time` / `end_time`, and optional `room`.
+- Draft expiry is returned as `expires_at`; default lifetime is 24 hours.
+- Extraction is a proposal for organizer review; the API does not provide confidence scores.
 
 ## Validation and errors
 
 - Validate authorization, file type/size, URL and parser output before returning data.
-- Malformed schedule, unsupported content, parser timeout/failure, unsafe/unreachable URL, and Elasticsearch failure behavior: **TBD**.
-- Retry and duplicate-upload behavior: **TBD**.
+- Invalid input returns `400`/`422`; oversized upload returns `413`; extraction provider failure returns `502`; Elasticsearch failure returns `503`.
+- Uploads are independent drafts; retries create a new draft.
 
 ## Side effects and Elasticsearch
 
 - Parse input and return structured draft data for review.
-- Whether the draft is persisted in Elasticsearch before confirmation is **TBD**; see the `schedule_drafts` candidate in [`../elasticsearch.md`](../elasticsearch.md).
-- If the URL or source file is retained, define access controls, retention, and sensitive-data handling before implementation (**TBD**).
+- The parsed draft is stored in the Elasticsearch `schedule_drafts` index with conference scope and expiry. Raw file bytes and source URLs are not stored.
+- Expired drafts are rejected at confirmation; automatic physical deletion/ILM is not yet configured.
 - Do not publish talks into the confirmed searchable schedule from this endpoint.
 
 ## Observability
 
-Trace parsing and any Elasticsearch operations. Record parser type, duration, outcome, and safe counts; avoid logging uploaded contents, signed URLs, or sensitive query parameters.
+OpenTelemetry spans cover parsing, OpenRouter, and Elasticsearch. Metrics record endpoint success/error counts. Safe attributes include parser/model, conference ID, and talk count; uploaded contents, source URLs, and credentials are not recorded.

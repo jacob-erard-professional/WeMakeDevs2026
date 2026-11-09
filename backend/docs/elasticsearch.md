@@ -4,22 +4,23 @@ This document records Elasticsearch decisions needed for the backend. Candidate 
 
 ## Connection and configuration
 
-- Client/library and supported Elasticsearch version: **TBD**
-- Endpoint and credential configuration: use environment-based configuration; exact names are defined by repository setup.
-- Connection timeout, request timeout, retry policy, and startup health behavior: **TBD**
-- Index creation/upgrade ownership and idempotency strategy: **TBD**
+- Client/library: Python `elasticsearch` async client, Elasticsearch 9.x.
+- Endpoint and credentials: `ES_URL`, optional `ES_API_KEY`; backend pod uses `http://elasticsearch:9200`.
+- Request timeout 10 seconds, two retries on timeout; API startup creates required indices idempotently.
+- Index creation is application-owned. Current setup creates missing indices and does not migrate existing mappings.
 
 ## Candidate indices
 
 | Candidate index | Purpose | Conference scope | Status |
 |---|---|---|---|
-| `talks` | Confirmed sessions and searchable schedule content | Required; exact representation **TBD** | Candidate |
+| `talks` | Confirmed sessions and searchable schedule content | Required; `conference_id` and `schedule_id` | Implemented |
+| `conferences` | Active schedule pointer per conference | Required; document ID is `conference_id` | Implemented |
 | `attendees` | Attendee name, bio, availability, and discovery settings | Required; document identity and privacy model **TBD** | Candidate |
 | `connections` | Connection requests and accepted state, if modeled separately | Required; representation versus attendee embedding **TBD** | Candidate |
-| `schedule_drafts` | Parsed but unconfirmed schedule data, if persistence is needed | Required if persisted; retention/access rules **TBD** | Candidate |
+| `schedule_drafts` | Parsed and confirmed schedule drafts | Required; conference scoped; expiry enforced at confirmation | Implemented |
 | `speakers` / `events` | Separate entities if needed by the finalized schedule model | **TBD** | Candidate |
 
-Index names, aliases, shard/replica settings, lifecycle policies, and whether some candidate indices should be combined are **TBD**.
+Talk documents are written under a unique schedule ID. Publication switches `conferences/{conference_id}.active_schedule_id` only after all talk documents have been indexed. Attendee search must first resolve this pointer and filter talk queries by both conference and active schedule IDs. Old schedule documents remain available for rollback/cleanup. Shard/replica settings, ILM policies and automatic draft deletion remain **TBD**.
 
 ## Document templates
 
@@ -105,11 +106,11 @@ For each index, record:
 
 | Use case | Reads | Writes | Query/consistency decisions |
 |---|---|---|---|
-| Confirm schedule | Existing schedule/draft state as needed | Confirmed talk documents | Duplicate detection, atomicity, replacement/merge behavior: **TBD** |
+| Confirm schedule | Conference active pointer and schedule draft | Talk documents, then active schedule pointer | Schedule ID is the draft ID; pointer swap publishes a complete version and replaces the previous version. |
 | Talk recommendations | Confirmed talks; attendee preferences/availability if stored | Optional recommendation cache or feedback | Keyword/semantic/hybrid strategy, ranking, conflict filtering: **TBD** |
 | Attendee discovery | Conference attendees with discovery opt-in | Optional recommendation feedback | Eligibility, similarity inputs, exclusions, and ranking: **TBD** |
 | Connection request/accept | Attendee and current connection state | Request and accepted state | Duplicate requests, concurrent acceptance, authorization, and disclosure: **TBD** |
-| Schedule upload | No Elasticsearch read required by default | Draft record only if chosen | Parser output validation and draft persistence/retention: **TBD** |
+| Schedule upload | No Elasticsearch read | `schedule_drafts` record | Parser output is validated; draft expiry is configurable and enforced on confirmation. |
 
 For each query, document the index/alias, required conference filter, request shape, sort/ranking, pagination, timeout, expected result count, and failure behavior. All values are **TBD** until implemented.
 

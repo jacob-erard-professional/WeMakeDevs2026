@@ -1,39 +1,37 @@
-# Endpoint Contract Template: `/confirm-schedule`
+# Endpoint Contract: `/confirm-schedule`
 
-**Status:** Draft; route and schema are subject to merge. **TBD** means the decision is intentionally open.
+**Status:** Implemented.
 
 ## Purpose and actor
 
-Allow an authorized organizer to confirm the reviewed, parsed schedule. Persist confirmed sessions so attendees can receive recommendations. Return the attendee join link and QR code described by the product flow; exact payload and generation mechanism are **TBD**.
+Allow an authorized organizer to confirm the reviewed, parsed schedule. Persist confirmed sessions so attendees can receive recommendations, and return the attendee join link and QR code.
 
 ## Request
 
-- HTTP method and content type: **TBD**
-- Conference scope and organizer authorization: **TBD**
-- Draft identifier or reviewed schedule payload: **TBD**
-- Organizer edits and required fields: **TBD**
-- Confirmation/replacement semantics for an existing schedule: **TBD**
+- HTTP: `POST /confirm-schedule`, JSON body with `conference_id`, `draft_id`, and optional edited `schedule`.
+- Requires `Authorization: Bearer <ORGANIZER_API_KEY>`.
+- If provided, the edited schedule replaces the parsed draft and is validated before publication. Times must include timezone offsets and are normalized to UTC.
+- The draft ID is also the stable schedule ID. Confirming it again is idempotent and returns the already-confirmed schedule.
+- A new confirmation replaces the active schedule for that conference; the prior schedule remains stored but inactive.
 
 ## Response
 
-- Status code and schema: **TBD**
-- Confirmation identifier/state: **TBD**
-- Join link and QR representation (URL, image, or encoded value): **TBD**
-- Partial success behavior if schedule storage succeeds but QR generation fails: **TBD**
+- Returns `200` with `conference_id`, `schedule_id`, `status`, `talk_count`, `join_url`, and a PNG `qr_code_data_uri`.
+- Join URL is `{PUBLIC_BASE_URL}/join/{conference_id}`.
+- Publication is complete before QR generation and the response is returned.
 
 ## Validation and errors
 
-- Validate conference and organizer authorization, schedule structure, times, and required session data: exact rules **TBD**.
-- Invalid or expired draft, duplicate sessions, conflicting times, Elasticsearch unavailable, and QR generation failure behavior: **TBD**.
-- Idempotency and retry semantics: **TBD**.
+- Missing/unknown draft returns `404`; expired draft returns `410`; invalid schedule returns `422`; Elasticsearch failure returns `503`.
+- Talk IDs must be unique, titles non-empty, list sizes bounded, and end times later than start times. Overlapping talks are allowed because parallel sessions are valid.
+- Repeating confirmation is safe; the original confirmed schedule is authoritative.
 
 ## Side effects and Elasticsearch
 
-- Write the confirmed schedule to the agreed conference-scoped talk model in [`../elasticsearch.md`](../elasticsearch.md).
-- Ensure attendee talk search and recommendations read only confirmed schedule records.
-- Define duplicate detection, replacement/merge behavior, and atomic publication so attendees do not see a partial schedule (**TBD**).
-- Store schedule times as instants in UTC; display timezone policy is **TBD**.
+- Write talk documents to `talks` using conference and schedule IDs. Then atomically switch `conferences/{conference_id}.active_schedule_id`; attendee searches must resolve/filter through this active schedule pointer.
+- Replaced schedule documents remain in Elasticsearch but are no longer active. Draft status changes to `confirmed` after publication.
+- Store schedule times as UTC instants; the source timezone is retained on the schedule.
 
 ## Observability
 
-Trace validation, Elasticsearch writes, and join/QR generation. Record duration and safe document/result counts; do not log uploaded source documents or credentials embedded in schedule URLs.
+OpenTelemetry spans cover validation, Elasticsearch writes, and the confirmation request; metrics record success/error. Record safe counts and IDs only; do not log schedule text or credentials.

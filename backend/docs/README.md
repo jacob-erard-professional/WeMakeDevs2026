@@ -1,6 +1,6 @@
 # Backend API and Elasticsearch Documentation
 
-These documents are implementation templates for the conference experience backend. The route names and behavior below reflect the current draft contract and may change during merge. Anything marked **TBD** needs an implementation decision; examples are not finalized schemas.
+These documents describe the implemented organizer schedule flow and the planned attendee flows. Organizer API choices are finalized below; attendee route and privacy decisions remain **TBD**.
 
 ## User flows
 
@@ -17,22 +17,24 @@ All conference data and attendee interactions are scoped to one conference. The 
 | [`/save-user-data`](endpoints/save-user-data.md) | Attendee | Save conference-scoped attendee data; read talks and eligible attendees for recommendations. |
 | [`/request-connection`](endpoints/request-connection.md) | Attendee | Check conference-scoped discovery/connection eligibility and record a request. |
 | [`/accept-connection`](endpoints/accept-connection.md) | Attendee | Update connection state; enable approved contact or resume sharing. |
-| [`/upload-schedule`](endpoints/upload-schedule.md) | Organizer | Extraction is a parser workflow; whether any draft data is stored in Elasticsearch is **TBD**. |
-| [`/confirm-schedule`](endpoints/confirm-schedule.md) | Organizer | Persist the reviewed schedule and make its talks available to attendee search and recommendations. |
+| [`/upload-schedule`](endpoints/upload-schedule.md) | Organizer | Parse input with OpenRouter and persist a conference-scoped draft in Elasticsearch. |
+| [`/confirm-schedule`](endpoints/confirm-schedule.md) | Organizer | Publish talks to Elasticsearch, switch the conference's active schedule, and return join link and QR code. |
 
-## Elasticsearch template
+Organizer endpoints require `Authorization: Bearer <ORGANIZER_API_KEY>`. `conference_id` scopes drafts, schedules and attendee join links. Drafts expire after `SCHEDULE_DRAFT_TTL_HOURS` (24 by default). The API is served by `backend.app.main:app`; see [SETUP.md](../../SETUP.md) for local Kubernetes deployment.
+
+## Elasticsearch implementation and remaining template
 
 See [`elasticsearch.md`](elasticsearch.md) for candidate indices, mapping and document templates, and query/read/write behavior. These are planning prompts, not a finalized schema or query plan.
 
 ## Completion checklist
 
-- [ ] Confirm route names, HTTP methods, authentication/authorization approach, and versioning.
-- [ ] Define conference identification and validate that every read and write is scoped to it.
-- [ ] Fill in request and response schemas, including required/optional fields and size limits.
-- [ ] Define validation, error responses, idempotency, and retry behavior.
+- [x] Confirm organizer route names, HTTP methods, bearer authorization, and request/response schemas.
+- [x] Define conference identification and scope organizer reads/writes to it.
+- [x] Define organizer request validation and upload limits.
+- [x] Define organizer schedule validation, errors, idempotency, and retry behavior.
 - [ ] Decide opt-in, connection acceptance, contact disclosure, and resume-sharing rules.
-- [ ] Finalize Elasticsearch indices, mappings, lifecycle, and query/recommendation strategy.
-- [ ] Document upload limits, supported formats, parser failures, and draft schedule handling.
-- [ ] Add tracing/logging/metrics expectations for each endpoint, Elasticsearch operation, and parser/LLM call.
+- [ ] Finalize attendee Elasticsearch mappings and query/recommendation strategy.
+- [x] Document schedule upload limits, supported formats, parser failures, and draft retention behavior.
+- [x] Instrument organizer endpoints, Elasticsearch operations, and OpenRouter extraction with spans and metrics.
 - [ ] Review accessibility and privacy implications for any user-facing behavior.
-- [ ] Keep API documentation aligned with the implementation and frontend contract.
+- [x] Keep organizer API documentation aligned with the implementation and frontend contract.
