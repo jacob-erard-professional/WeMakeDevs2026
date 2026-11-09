@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -16,7 +18,7 @@ from typing import Any, TypeVar
 from uuid import uuid4
 
 import qrcode
-from elasticsearch import Elasticsearch, NotFoundError
+from elasticsearch import ApiError, Elasticsearch, NotFoundError
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
@@ -30,6 +32,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 from pydantic import BaseModel, Field, HttpUrl
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile as FormUploadFile
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("conference_api")
@@ -76,77 +79,136 @@ configure_telemetry()
 tracer = trace.get_tracer("conference_api")
 
 
-# --- Elasticsearch mappings --------------------------------------------------------------------
+# --- Elasticsearch indices -------------------------------------------------------------------
 
+JINA = ".jina-embeddings-v5-text-small"
 _ID = {"type": "keyword"}
 _DATE = {"type": "date"}
 _TEXT = {"type": "text"}
 _BOOL = {"type": "boolean"}
-_KEYWORD_SUBFIELD = {"type": "keyword", "ignore_above": 512}
+_SEMANTIC = {"type": "semantic_text", "inference_id": JINA}
 
-# Serverless rejects number_of_shards / number_of_replicas / refresh_interval: settings stay empty.
-INDEX_MAPPINGS: dict[str, dict[str, Any]] = {
+# Index bodies from backend/docs/vector-matching.md. Serverless rejects shard/replica/refresh
+# settings, so only the analysis block is passed. `talks-archive` is read-only and not ours.
+INDEX_BODIES: dict[str, dict[str, Any]] = {
     "talks": {
-        "dynamic": True,
-        "properties": {
-            "conference_id": _ID,
-            "talk_id": _ID,
-            "title": {"type": "text", "fields": {"keyword": _KEYWORD_SUBFIELD}},
-            "abstract": _TEXT,
-            "tags": _ID,
-            "speaker_ids": _ID,
-            "room": _ID,
-            "start_time": _DATE,
-            "end_time": _DATE,
-            "confirmed": _BOOL,
+        "mappings": {
+            "dynamic": "strict",
+            "properties": {
+                "conference_id": _ID,
+                "talk_id": _ID,
+                "title": _TEXT,
+                "abstract": _TEXT,
+                "speakers": _ID,
+                "room": _ID,
+                "track": _ID,
+                "start_time": _DATE,
+                "end_time": _DATE,
+                "confirmed": _BOOL,
+                "semantic_content": _SEMANTIC,
+            },
         },
     },
     "attendees": {
-        "dynamic": True,
-        "properties": {
-            "conference_id": _ID,
-            "attendee_id": _ID,
-            "name": {"type": "text", "fields": {"keyword": _KEYWORD_SUBFIELD}},
-            "bio": _TEXT,
-            "email": _ID,
-            "linkedin_url": _ID,
-            "blockout_times": {"properties": {"start_time": _DATE, "end_time": _DATE}},
-            "discovery_opt_in": _BOOL,
-            "resume_text": {"type": "text", "index": False},
-            "resume_asset": {"type": "object", "enabled": False},
-            "access_token": {"type": "keyword", "index": False, "doc_values": False},
-            "updated_at": _DATE,
+        "settings": {
+            "analysis": {
+                "normalizer": {"lower": {"type": "custom", "filter": ["lowercase", "asciifolding"]}}
+            }
+        },
+        "mappings": {
+            "dynamic": "strict",
+            "properties": {
+                "conference_id": _ID,
+                "attendee_id": _ID,
+                "name": _TEXT,
+                "headline": _TEXT,
+                "bio": _TEXT,
+                "interests": {"type": "keyword", "normalizer": "lower"},
+                "skills": {"type": "keyword", "normalizer": "lower"},
+                "working_on": _TEXT,
+                "profile": _SEMANTIC,
+                "looking_for": _SEMANTIC,
+                "can_help_with": _SEMANTIC,
+                "resume_text": _SEMANTIC,
+                "discovery_opt_in": _BOOL,
+                "blockout_times": {"properties": {"start_time": _DATE, "end_time": _DATE}},
+                "email": {"type": "keyword", "index": False},
+                "linkedin_url": {"type": "keyword", "index": False},
+                "access_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
+                "updated_at": _DATE,
+            },
         },
     },
     "connections": {
-        "dynamic": True,
-        "properties": {
-            "conference_id": _ID,
-            "connection_id": _ID,
-            "requester_id": _ID,
-            "recipient_id": _ID,
-            "status": _ID,
-            "message": _TEXT,
-            "share_email": _BOOL,
-            "share_linkedin": _BOOL,
-            "share_resume": _BOOL,
-            "created_at": _DATE,
-            "updated_at": _DATE,
+        "mappings": {
+            "dynamic": True,
+            "properties": {
+                "conference_id": _ID,
+                "connection_id": _ID,
+                "requester_id": _ID,
+                "recipient_id": _ID,
+                "status": _ID,
+                "message": _TEXT,
+                "share_email": _BOOL,
+                "share_linkedin": _BOOL,
+                "share_resume": _BOOL,
+                "created_at": _DATE,
+                "updated_at": _DATE,
+            },
         },
     },
 }
+TALK_FIELDS = set(INDEX_BODIES["talks"]["mappings"]["properties"])
+ATTENDEE_FIELDS = set(INDEX_BODIES["attendees"]["mappings"]["properties"])
+
+_indices_ready = False
+INDEX_RETRY_MAX_SECONDS = 60.0
 
 
 def ensure_indices() -> None:
-    """Create each index with its explicit mapping if it does not exist yet (idempotent)."""
-    for index, mapping in INDEX_MAPPINGS.items():
+    """Create each index with its explicit body if it does not exist yet (idempotent).
+
+    Raises on any failure; `_indices_ready` flips to True only when every index is confirmed.
+    """
+    global _indices_ready
+    if _indices_ready:
+        return
+    for index, body in INDEX_BODIES.items():
         with tracer.start_as_current_span("ensure_index") as span:
             span.set_attribute("db.system", "elasticsearch")
             span.set_attribute("db.elasticsearch.index", index)
             if es.indices.exists(index=index):
                 continue
-            es.indices.create(index=index, mappings=mapping)
+            try:
+                es.indices.create(index=index, **body)
+            except ApiError as exc:
+                if exc.error != "resource_already_exists_exception":  # lost a create race
+                    raise
             logger.info("es_index_created index=%s", index)
+    _indices_ready = True
+
+
+async def ensure_indices_ready() -> None:
+    """Gate for every write path: a write must never create an index with dynamic mapping."""
+    if _indices_ready:
+        return
+    try:
+        await run_in_threadpool(ensure_indices)
+    except Exception:
+        logger.exception("es_index_setup_failed outcome=write_rejected")
+        raise HTTPException(503, "Conference data store is not initialized") from None
+
+
+async def retry_index_setup() -> None:
+    """Background: keep retrying index creation with capped exponential backoff until it works."""
+    delay = 1.0
+    while not _indices_ready:
+        try:
+            await run_in_threadpool(ensure_indices)
+        except Exception as exc:
+            logger.warning("es_index_setup_retry in=%.0fs error=%s", delay, type(exc).__name__)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, INDEX_RETRY_MAX_SECONDS)
 
 
 @asynccontextmanager
@@ -154,8 +216,12 @@ async def lifespan(_: FastAPI):
     try:
         await run_in_threadpool(ensure_indices)
     except Exception:  # noqa: BLE001 - startup must survive an unreachable data store
-        logger.exception("es_index_setup_failed; continuing so /health stays reachable")
-    yield
+        logger.exception("es_index_setup_failed; retrying in background so /health stays reachable")
+    retry_task = asyncio.create_task(retry_index_setup())
+    try:
+        yield
+    finally:
+        retry_task.cancel()
 
 
 app = FastAPI(title="Conference API", version="0.1.0", lifespan=lifespan)
@@ -173,12 +239,30 @@ class Blockout(BaseModel):
 class SaveUserData(BaseModel):
     conference_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=160)
-    bio: str = Field(default="", max_length=10_000)
+    headline: str = Field(default="", max_length=300)
     email: str | None = Field(default=None, max_length=320)
     linkedin_url: HttpUrl | None = None
+    bio: str = Field(default="", max_length=10_000)
+    interests: list[str] = Field(default_factory=list, max_length=50)
+    skills: list[str] = Field(default_factory=list, max_length=50)
+    working_on: str = Field(default="", max_length=2_000)
+    looking_for: str = Field(default="", max_length=2_000)
+    can_help_with: str = Field(default="", max_length=2_000)
     blockout_times: list[Blockout] = Field(default_factory=list, max_length=100)
     discovery_opt_in: bool = False
     resume_text: str | None = Field(default=None, max_length=50_000)
+
+
+def profile_text(p: SaveUserData) -> str:
+    """Backend-built text behind the `profile` semantic field (spec: vector-matching.md)."""
+    parts = [
+        p.headline,
+        p.bio,
+        f"Working on: {p.working_on}" if p.working_on else "",
+        f"Interests: {', '.join(p.interests)}" if p.interests else "",
+        f"Skills: {', '.join(p.skills)}" if p.skills else "",
+    ]
+    return ". ".join(x for x in parts if x)
 
 
 class ConnectionRequest(BaseModel):
@@ -247,7 +331,8 @@ async def attendee_claim(
             span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
             logger.exception("es_operation=read_attendee_claim outcome=error")
             raise HTTPException(503, "Conference data store unavailable") from None
-    if not secrets.compare_digest(doc["_source"].get("access_token", ""), token):
+    presented = hashlib.sha256(token.encode()).hexdigest()
+    if not hmac.compare_digest(doc["_source"].get("access_token_sha256", ""), presented):
         raise HTTPException(401, "Invalid attendee token")
     return conference_id, attendee_id
 
@@ -271,7 +356,8 @@ def health() -> dict[str, str]:
 async def save_user_data(
     request: Request, identity: tuple[str, str] | None = Depends(attendee_claim)
 ) -> dict[str, Any]:
-    resume_asset = None
+    await ensure_indices_ready()
+    uploaded_resume_text: str | None = None
     if request.headers.get("content-type", "").startswith("multipart/form-data"):
         form = await request.form()
         try:
@@ -281,21 +367,18 @@ async def save_user_data(
                 422, "Multipart requests require a valid JSON 'profile' field"
             ) from exc
         upload = form.get("resume")
-        if isinstance(upload, UploadFile):
-            if upload.content_type not in {
-                "application/pdf",
-                "text/plain",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            }:
-                raise HTTPException(415, "Resume must be PDF, plain text, or DOCX")
+        # request.form() yields starlette's UploadFile, not fastapi's subclass.
+        if isinstance(upload, FormUploadFile):
+            # Spec: store extracted text only, never the file. PDF/DOCX extraction is a
+            # follow-up (pypdf / python-docx); plain text is accepted today.
+            if upload.content_type != "text/plain":
+                raise HTTPException(
+                    415, "Resume upload currently accepts text/plain; send PDF/DOCX as resume_text"
+                )
             content = await upload.read(MAX_UPLOAD_BYTES + 1)
             if len(content) > MAX_UPLOAD_BYTES:
                 raise HTTPException(413, "Resume exceeds 10 MiB")
-            resume_asset = {
-                "filename": upload.filename,
-                "content_type": upload.content_type,
-                "content_base64": base64.b64encode(content).decode("ascii"),
-            }
+            uploaded_resume_text = content.decode("utf-8", errors="replace")[:50_000]
     else:
         try:
             payload = SaveUserData.model_validate(await request.json())
@@ -316,18 +399,21 @@ async def save_user_data(
             )
     doc = payload.model_dump(mode="json") | {
         "attendee_id": attendee_id,
+        "profile": profile_text(payload),
         "updated_at": datetime.now(UTC).isoformat(),
     }
-    if resume_asset:
-        doc["resume_asset"] = resume_asset
+    if uploaded_resume_text:
+        doc["resume_text"] = uploaded_resume_text
+    # Strict mapping: drop empty optionals and anything the mapping does not know.
+    doc = {k: v for k, v in doc.items() if k in ATTENDEE_FIELDS and v not in (None, "", [])}
     attendee_doc_id = f"{payload.conference_id}:{attendee_id}"
     if token:
-        doc["access_token"] = token
+        doc["access_token_sha256"] = hashlib.sha256(token.encode()).hexdigest()
     elif identity:
         old = await es_call(
             "read_attendee", lambda: es.get(index="attendees", id=attendee_doc_id)["_source"]
         )
-        doc["access_token"] = old["access_token"]
+        doc["access_token_sha256"] = old["access_token_sha256"]
     await es_call(
         "save_attendee", lambda: es.index(index="attendees", id=attendee_doc_id, document=doc)
     )
@@ -336,6 +422,7 @@ async def save_user_data(
         lambda: es.search(
             index="talks",
             query={"bool": {"filter": [{"term": {"conference_id": payload.conference_id}}]}},
+            source={"excludes": ["semantic_content"]},
             size=100,
         )["hits"]["hits"],
     )
@@ -366,6 +453,7 @@ async def save_user_data(
                         "must_not": [{"term": {"attendee_id": attendee_id}}],
                     }
                 },
+                source={"includes": ["attendee_id", "name", "headline"]},
                 size=20,
             )["hits"]["hits"],
         )
@@ -373,7 +461,7 @@ async def save_user_data(
             {
                 "attendee_id": h["_source"]["attendee_id"],
                 "name": h["_source"]["name"],
-                "bio": h["_source"]["bio"],
+                "headline": h["_source"].get("headline", ""),
             }
             for h in found
         ]
@@ -392,6 +480,7 @@ async def request_connection(
 ) -> dict[str, str]:
     if not identity or identity[0] != payload.conference_id:
         raise HTTPException(401, "Valid attendee token for this conference required")
+    await ensure_indices_ready()
     requester = identity[1]
     if requester == payload.recipient_id:
         raise HTTPException(400, "Cannot connect to yourself")
@@ -434,6 +523,7 @@ async def accept_connection(
 ) -> dict[str, Any]:
     if not identity or identity[0] != payload.conference_id:
         raise HTTPException(401, "Valid attendee token for this conference required")
+    await ensure_indices_ready()
     conn_doc_id = f"{payload.conference_id}:{payload.connection_id}"
     conn = await es_call(
         "read_connection", lambda: es.get(index="connections", id=conn_doc_id)["_source"]
@@ -464,7 +554,6 @@ async def accept_connection(
         disclosed["linkedin_url"] = own_profile.get("linkedin_url")
     if payload.share_resume:
         disclosed["resume_text"] = own_profile.get("resume_text")
-        disclosed["resume_asset"] = own_profile.get("resume_asset")
     return {
         "connection_id": payload.connection_id,
         "status": "accepted",
@@ -499,21 +588,68 @@ async def upload_schedule(
     )
 
 
+def _string_list(value: Any) -> list[str]:
+    items = [value] if isinstance(value, str) else value if isinstance(value, list) else []
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
 def talk_identifier(conference_id: str, talk: dict[str, Any], start_time_utc: str) -> str:
-    """Stable talk id so re-confirming a schedule overwrites instead of duplicating."""
+    """Stable talk id so re-confirming overwrites instead of duplicating.
+
+    Parallel sessions share title and start (two "Lunch" at 12:00), so room, track and speakers
+    take part in the hash when present.
+    """
     provided = talk.get("talk_id")
     if isinstance(provided, str) and provided.strip():
         return provided.strip()
-    seed = "\n".join([conference_id, str(talk["title"]).strip(), start_time_utc])
+    seed = "\n".join(
+        [
+            conference_id,
+            str(talk["title"]).strip(),
+            start_time_utc,
+            str(talk.get("room") or "").strip(),
+            "|".join(sorted(_string_list(talk.get("track")))),
+            "|".join(sorted(_string_list(talk.get("speakers")))),
+        ]
+    )
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
+
+
+def talk_document(
+    conference_id: str, talk: dict[str, Any], talk_id: str, start: datetime, end: datetime
+) -> dict[str, Any]:
+    """Project a parsed talk onto the strict `talks` mapping; unknown keys are dropped."""
+    title = str(talk["title"]).strip()
+    abstract = str(talk.get("abstract") or "").strip()
+    doc: dict[str, Any] = {
+        "conference_id": conference_id,
+        "talk_id": talk_id,
+        "title": title,
+        "start_time": start.astimezone(UTC).isoformat(),
+        "end_time": end.astimezone(UTC).isoformat(),
+        "confirmed": True,
+        "semantic_content": f"{title}\n\n{abstract}" if abstract else title,
+    }
+    if abstract:
+        doc["abstract"] = abstract
+    if talk.get("room"):
+        doc["room"] = str(talk["room"]).strip()
+    for key in ("speakers", "track"):
+        values = _string_list(talk.get(key))
+        if values:
+            doc[key] = values
+    assert set(doc) <= TALK_FIELDS
+    return doc
 
 
 @app.post("/confirm-schedule")
 async def confirm_schedule(
     payload: ConfirmSchedule, _: None = Depends(require_organizer)
 ) -> dict[str, Any]:
-    normalized = []
-    for talk in payload.talks:
+    await ensure_indices_ready()
+    normalized: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for position, talk in enumerate(payload.talks):
         required = {"title", "start_time", "end_time"}
         if not required.issubset(talk):
             raise HTTPException(422, "Each talk requires title, start_time, and end_time")
@@ -525,16 +661,11 @@ async def confirm_schedule(
         if not start.tzinfo or not end.tzinfo or end <= start:
             raise HTTPException(422, "Talk times must be timezone-aware and end after start")
         start_utc = start.astimezone(UTC).isoformat()
-        normalized.append(
-            talk
-            | {
-                "conference_id": payload.conference_id,
-                "talk_id": talk_identifier(payload.conference_id, talk, start_utc),
-                "start_time": start_utc,
-                "end_time": end.astimezone(UTC).isoformat(),
-                "confirmed": True,
-            }
-        )
+        talk_id = talk_identifier(payload.conference_id, talk, start_utc)
+        if talk_id in seen_ids:  # still colliding inside one request: disambiguate, never drop
+            talk_id = f"{talk_id}-{position}"
+        seen_ids.add(talk_id)
+        normalized.append(talk_document(payload.conference_id, talk, talk_id, start, end))
     actions: list[dict[str, Any]] = []
     for talk in normalized:
         doc_id = f"{payload.conference_id}:{talk['talk_id']}"
@@ -559,6 +690,27 @@ async def confirm_schedule(
                 next(iter(failed[0].values())).get("error") if failed else None,
             )
             raise HTTPException(502, "Some talks could not be stored")
+    confirmed_ids = [talk["talk_id"] for talk in normalized]
+    removed = await es_call(
+        "remove_stale_talks",
+        lambda: es.delete_by_query(
+            index="talks",
+            query={
+                "bool": {
+                    "filter": [{"term": {"conference_id": payload.conference_id}}],
+                    "must_not": [{"terms": {"talk_id": confirmed_ids}}],
+                }
+            },
+            refresh=True,
+            conflicts="proceed",
+        ),
+        **{"db.elasticsearch.index": "talks", "conference.talk_count": len(confirmed_ids)},
+    )
+    logger.info(
+        "confirm_schedule_stale_removed conference_id=%s deleted=%s",
+        payload.conference_id,
+        getattr(removed, "body", removed).get("deleted"),
+    )
     join_url = (
         f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/join/{payload.conference_id}"
     )
