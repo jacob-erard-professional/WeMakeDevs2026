@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for a Python project
+        id: project
+        run: |
+          if [ -f pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No pyproject.toml yet; skipping lint and tests."
+          fi
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.project.outputs.present == 'true'
+
+      - name: Install dependencies
+        if: steps.project.outputs.present == 'true'
+        run: uv sync --all-extras --dev
+
+      - name: Lint
+        if: steps.project.outputs.present == 'true'
+        run: |
+          uvx ruff check .
+          uvx ruff format --check .
+
+      - name: Test
+        if: steps.project.outputs.present == 'true'
+        run: |
+          if [ -d tests ]; then
+            uv run --with pytest pytest
+          else
+            echo "No tests/ directory yet; skipping."
+          fi
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Kubernetes manifests
+        run: |
+          shopt -s nullglob
+          files=(k8s/*.yaml k8s/*.yml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No manifests to validate."
+            exit 0
+          fi
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar -xz kubeconform
+          ./kubeconform -strict -summary -ignore-missing-schemas "${files[@]}"
