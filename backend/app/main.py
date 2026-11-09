@@ -202,6 +202,27 @@ SCHEDULE_STATUS_FIELDS = [
     "schedule_error",
     "schedule_updated_at",
 ]
+# A background publish dies with its pod (every merge redeploys both replicas). Each bulk batch
+# refreshes schedule_updated_at; an "indexing" older than this is reported as failed.
+SCHEDULE_STALE_SECONDS = 120
+STALE_SCHEDULE_ERROR = "Publish was interrupted (likely a restart); confirm the schedule again"
+
+
+def effective_schedule_status(conference: Mapping[str, Any], has_talks: bool) -> tuple[str, Any]:
+    """Status to report, with the error message: a stale `indexing` becomes `failed`."""
+    status = conference.get("schedule_status") or ("ready" if has_talks else "none")
+    error = conference.get("schedule_error")
+    if status == "indexing":
+        updated_at = conference.get("schedule_updated_at")
+        try:
+            age = datetime.now(UTC) - datetime.fromisoformat(str(updated_at))
+        except (TypeError, ValueError):
+            age = None
+        if age is None or age.total_seconds() > SCHEDULE_STALE_SECONDS:
+            return "failed", STALE_SCHEDULE_ERROR
+    return status, error
+
+
 ATTENDEE_FIELDS = set(INDEX_BODIES["attendees"]["mappings"]["properties"])
 SAFE_ATTENDEE_SOURCE = {"includes": ["attendee_id", "name", "headline"]}
 TALK_SOURCE = ["talk_id", "title", "room", "start_time", "end_time"]
@@ -718,13 +739,16 @@ async def join_conference(conference_id: str) -> dict[str, Any]:
         )["hits"]["hits"],
         **{"db.elasticsearch.index": "talks"},
     )
-    schedule_status = conference.get("schedule_status") or ("ready" if hits else "none")
-    if not hits and schedule_status != "indexing":
+    status, error = effective_schedule_status(conference, bool(hits))
+    if not hits and status != "indexing":
         raise HTTPException(404, "Conference not found or has no confirmed schedule")
     return {
         "conference_id": conference_id,
         "name": conference["name"],
-        "schedule_status": schedule_status,
+        "schedule_status": status,
+        "schedule_error": error,
+        "schedule_talk_count": conference.get("schedule_talk_count"),
+        "schedule_indexed_count": conference.get("schedule_indexed_count"),
         "talk_count": len(hits),
         "talks": [hit["_source"] for hit in hits],
     }
@@ -742,13 +766,14 @@ async def schedule_status(conference_id: str) -> dict[str, Any]:
         )["_source"],
         **{"db.elasticsearch.index": "conferences"},
     )
+    status, error = effective_schedule_status(conference, has_talks=False)
     return {
         "conference_id": conference_id,
         "name": conference["name"],
-        "schedule_status": conference.get("schedule_status") or "none",
+        "schedule_status": status,
         "schedule_talk_count": conference.get("schedule_talk_count"),
         "schedule_indexed_count": conference.get("schedule_indexed_count"),
-        "schedule_error": conference.get("schedule_error"),
+        "schedule_error": error,
         "schedule_updated_at": conference.get("schedule_updated_at"),
     }
 
