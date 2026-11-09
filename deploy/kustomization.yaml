@@ -1,0 +1,13 @@
+# Argo CD deploys this folder from the `deploy` branch, not from main. The build-and-deploy
+# workflow copies main's deploy/ there and pins the image below to the commit it built.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: team-wearedevs
+resources:
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml
+images:
+  - name: app
+    newName: ghcr.io/jacob-erard-professional/wemakedevs2026
+    newTag: latest
