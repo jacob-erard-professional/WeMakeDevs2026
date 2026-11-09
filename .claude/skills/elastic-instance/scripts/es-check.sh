@@ -13,7 +13,7 @@ set -euo pipefail
 env_file="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.env}"
 [[ -f "$env_file" ]] || { echo "No .env at $env_file" >&2; exit 1; }
 
-env_value() { grep -m1 "^$1=" "$env_file" | cut -d= -f2- | tr -d '"'"'"; }
+env_value() { { grep -m1 "^$1=" "$env_file" || true; } | cut -d= -f2- | tr -d '"'"'"; }
 ES_URL="$(env_value ES_URL)"
 ES_API_KEY="$(env_value ES_API_KEY)"
 [[ -n "$ES_URL" && -n "$ES_API_KEY" ]] || { echo "ES_URL or ES_API_KEY missing in $env_file" >&2; exit 1; }
