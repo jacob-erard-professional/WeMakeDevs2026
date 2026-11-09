@@ -1,7 +1,8 @@
 import { getDocumentAsync } from 'expo-document-picker';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
+import { parseResume } from './api';
 import { formatTime, parseTime } from './conference';
 import type { Attendee } from './conference';
 import { sampleAttendee } from './demoConference';
@@ -33,6 +34,13 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [pickedUp, setPickedUp] = useState<string[]>([]);
+  const [resumeNote, setResumeNote] = useState('');
+  const parseRequest = useRef(0);
+  // `profile` inside the async prefill would be stale; read the latest through a ref.
+  const latest = useRef(profile);
+  latest.current = profile;
 
   function update(changes: Partial<Attendee>) {
     const next = { ...profile, ...changes };
@@ -48,11 +56,52 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
       });
       if (!result.canceled) {
         const { uri, name, mimeType, file } = result.assets[0];
-        update({ resume: { uri, name, mimeType, file } });
+        const resume = { uri, name, mimeType, file };
+        update({ resume });
+        if (!sample) void prefillFromResume(resume);
       }
     } catch {
       setError('Could not open the file picker. Try again or continue with a bio.');
     }
+  }
+
+  // Fill only fields the attendee has not typed in; never overwrite their words.
+  async function prefillFromResume(resume: NonNullable<Attendee['resume']>) {
+    const requestId = ++parseRequest.current;
+    setReading(true);
+    setPickedUp([]);
+    setResumeNote('');
+    try {
+      const { resume_profile: parsed } = await parseResume(resume);
+      if (requestId !== parseRequest.current) return;
+      const current = latest.current;
+      const changes: Partial<Attendee> = {};
+      const found: string[] = [];
+      const summary = parsed.summary.trim()
+        || [parsed.headline.trim(), parsed.working_on.trim()].filter(Boolean).join('. ');
+      if (!current.bio.trim() && summary) { changes.bio = summary; found.push('a bio'); }
+      const topics = [...parsed.interests, ...parsed.skills].map((item) => item.trim()).filter(Boolean);
+      const unique = topics.filter((item, index) => topics.findIndex((other) => other.toLowerCase() === item.toLowerCase()) === index);
+      if (!current.interests.trim() && unique.length) { changes.interests = unique.join(', '); found.push(`${unique.length} interests`); }
+      if (Object.keys(changes).length) update(changes);
+      setPickedUp(found);
+      setResumeNote(found.length ? '' : 'We couldn’t pull anything new from that file. Add a bio and interests below.');
+    } catch (reason) {
+      if (requestId !== parseRequest.current) return;
+      setResumeNote(reason instanceof Error
+        ? `${reason.message} Your résumé will still be used when you save.`
+        : 'We couldn’t read the résumé now. It will still be used when you save.');
+    } finally {
+      if (requestId === parseRequest.current) setReading(false);
+    }
+  }
+
+  function removeResume() {
+    parseRequest.current += 1;
+    setReading(false);
+    setPickedUp([]);
+    setResumeNote('');
+    update({ resume: undefined, resumePublic: false });
   }
 
   function addBlock() {
@@ -98,14 +147,22 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
   }
 
   async function save() {
-    if (start.trim() || end.trim()) {
-      setError('Add the pending time block or clear both time fields before continuing.');
-      return;
+    // Availability is optional: a complete pending range is kept, anything else is ignored.
+    let next = profile;
+    const from = parseTime(start);
+    const to = parseTime(end);
+    if (from !== null && to !== null && from < to
+      && !profile.unavailable.some((range) => range.start === from && range.end === to)) {
+      next = { ...profile, unavailable: [...profile.unavailable, { start: from, end: to }] };
+      setProfile(next);
+      onChange(next);
     }
+    setStart('');
+    setEnd('');
     setSaving(true);
     setError('');
     try {
-      await onSave(profile);
+      await onSave(next);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save your profile.');
     } finally {
@@ -122,13 +179,7 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
           <Action title="Use sample profile" onPress={() => { setProfile(sampleAttendee); onChange(sampleAttendee); setError(''); }} secondary />
         ) : null}
         <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
-        <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
-        <Field label="Email (optional, shared only with connections you accept)" value={profile.email} onChangeText={(email) => update({ email })} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" maxLength={320} />
-        <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
-        <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
-        <Field label="What do you want to see?" multiline value={profile.lookingFor} onChangeText={(lookingFor) => update({ lookingFor })} placeholder="Talks, people, or topics you’re here for" maxLength={2000} />
-        <Field label="LinkedIn profile URL (optional)" value={profile.linkedin} onChangeText={(linkedin) => update({ linkedin })} autoCapitalize="none" keyboardType="url" maxLength={300} />
-        <Copy>Your résumé is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
+        <Copy>Start with your résumé or LinkedIn PDF (Profile → More → Save to PDF) and we’ll fill in what we can. It is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
         {previousResume && !profile.resume ? (
           <Message>
             {previousResume.onServer
@@ -138,11 +189,14 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
         ) : null}
         <View style={styles.row}>
           <Action title={previousResume && !profile.resume ? 'Re-attach résumé PDF' : 'Choose résumé PDF'} onPress={pickResume} secondary />
-          {profile.resume ? <Action title="Remove résumé" onPress={() => update({ resume: undefined, resumePublic: false })} secondary /> : null}
+          {profile.resume ? <Action title="Remove résumé" onPress={removeResume} secondary /> : null}
         </View>
         {profile.resume ? (
           <View style={styles.stack}>
             <Copy>Selected file: {profile.resume.name}</Copy>
+            {reading ? <Message>Reading your résumé… you can keep filling in the form.</Message> : null}
+            {pickedUp.length ? <Message>We picked up {pickedUp.join(' and ')} from your résumé. Edit anything below.</Message> : null}
+            {resumeNote ? <Message>{resumeNote}</Message> : null}
             <View style={styles.row}>
               <Action title="Private résumé" selected={!profile.resumePublic} onPress={() => update({ resumePublic: false })} secondary />
               <Action title="Public résumé" selected={profile.resumePublic} onPress={() => update({ resumePublic: true })} secondary />
@@ -150,6 +204,12 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
             <Copy>Sharing preference: {profile.resumePublic ? 'Public' : 'Private'}. The live sharing policy is pending.</Copy>
           </View>
         ) : null}
+        <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
+        <Field label="Email (optional, shared only with connections you accept)" value={profile.email} onChangeText={(email) => update({ email })} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" maxLength={320} />
+        <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
+        <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
+        <Field label="What do you want to see?" multiline value={profile.lookingFor} onChangeText={(lookingFor) => update({ lookingFor })} placeholder="Talks, people, or topics you’re here for" maxLength={2000} />
+        <Field label="LinkedIn profile URL (optional)" value={profile.linkedin} onChangeText={(linkedin) => update({ linkedin })} autoCapitalize="none" keyboardType="url" maxLength={300} />
         <Action title={profile.discoverable ? 'Discovery on' : 'Discovery off'} selected={profile.discoverable}
           onPress={() => update({ discoverable: !profile.discoverable })} secondary />
         <Copy>Discovery controls whether your profile may appear in other attendees’ suggestions. You can browse suggestions either way.</Copy>
@@ -158,7 +218,7 @@ export function ProfileForm({ initial, previousResume, step, sample, onChange, o
       </Section> : <Section>
         <Label>Step 2 of 2 · Availability</Label>
         <Heading large>Make time for what matters</Heading>
-        <Copy>Block out any times you’re busy, or continue if you’re free all day. Use Mountain Time in 24-hour HH:MM format.</Copy>
+        <Copy>Optional: block out times you’re busy, or continue straight to your recommendations. Use Mountain Time in 24-hour HH:MM format.</Copy>
         <Field label="Unavailable from" value={start} onChangeText={setStart} placeholder="11:00" maxLength={5} />
         <Field label="Unavailable until" value={end} onChangeText={setEnd} placeholder="12:00" maxLength={5} />
         <Action title="Add unavailable time" onPress={addBlock} secondary />
