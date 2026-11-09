@@ -20,6 +20,7 @@ from uuid import uuid4
 import qrcode
 from elasticsearch import ApiError, Elasticsearch, NotFoundError
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -229,6 +230,16 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Conference API", version="0.1.0", lifespan=lifespan)
+# Browser origins allowed to call the API (e.g. Expo web on localhost); empty disables CORS.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Organizer-Key"],
+        allow_credentials=False,
+    )
 FastAPIInstrumentor.instrument_app(app)
 
 
