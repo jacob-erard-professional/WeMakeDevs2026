@@ -85,9 +85,22 @@ _BOOL = {"type": "boolean"}
 _KEYWORD_SUBFIELD = {"type": "keyword", "ignore_above": 512}
 
 # Serverless rejects number_of_shards / number_of_replicas / refresh_interval: settings stay empty.
-# `talks` is NOT here: it is an alias over the shared, strictly mapped `talks-jina` index
-# (see docs/elasticsearch-connection.md). Organizer talks are written into it with that schema.
 INDEX_MAPPINGS: dict[str, dict[str, Any]] = {
+    "talks": {
+        "dynamic": True,
+        "properties": {
+            "conference_id": _ID,
+            "talk_id": _ID,
+            "title": {"type": "text", "fields": {"keyword": _KEYWORD_SUBFIELD}},
+            "abstract": _TEXT,
+            "tags": _ID,
+            "speaker_ids": _ID,
+            "room": _ID,
+            "start_time": _DATE,
+            "end_time": _DATE,
+            "confirmed": _BOOL,
+        },
+    },
     "attendees": {
         "dynamic": True,
         "properties": {
@@ -322,15 +335,7 @@ async def save_user_data(
         "recommend_talks",
         lambda: es.search(
             index="talks",
-            query={
-                "bool": {
-                    "filter": [
-                        {"term": {"conference_id": payload.conference_id}},
-                        {"term": {"source": TALK_SOURCE}},
-                    ]
-                }
-            },
-            source={"excludes": ["semantic_content"]},
+            query={"bool": {"filter": [{"term": {"conference_id": payload.conference_id}}]}},
             size=100,
         )["hits"]["hits"],
     )
@@ -339,8 +344,8 @@ async def save_user_data(
     for hit in talks:
         talk = hit["_source"]
         try:
-            start = datetime.fromisoformat(talk["start"].replace("Z", "+00:00"))
-            end = datetime.fromisoformat(talk["end"].replace("Z", "+00:00"))
+            start = datetime.fromisoformat(talk["start_time"].replace("Z", "+00:00"))
+            end = datetime.fromisoformat(talk["end_time"].replace("Z", "+00:00"))
             if any(start < stop and begin < end for begin, stop in blockouts):
                 continue
         except (KeyError, ValueError):
@@ -494,65 +499,13 @@ async def upload_schedule(
     )
 
 
-TALK_SOURCE = "organizer"
-
-
-def talk_identifier(conference_id: str, talk: dict[str, Any], start_utc: str) -> str:
-    """Stable talk id (used as both `_id` and `id`) so re-confirming overwrites, never duplicates.
-
-    Conference-prefixed so organizer talks can never collide with the seeded kubecon/pyvideo ids.
-    """
-    provided = talk.get("talk_id") or talk.get("id")
+def talk_identifier(conference_id: str, talk: dict[str, Any], start_time_utc: str) -> str:
+    """Stable talk id so re-confirming a schedule overwrites instead of duplicating."""
+    provided = talk.get("talk_id")
     if isinstance(provided, str) and provided.strip():
-        return f"{conference_id}:{provided.strip()}"
-    seed = "\n".join([conference_id, str(talk["title"]).strip(), start_utc])
-    return f"{conference_id}:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:32]}"
-
-
-def _string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    items = [value] if isinstance(value, str) else list(value) if isinstance(value, list) else []
-    return [str(item).strip() for item in items if str(item).strip()]
-
-
-def shared_talk_document(
-    conference_id: str, talk: dict[str, Any], start: datetime, end: datetime
-) -> dict[str, Any]:
-    """Project an organizer talk onto the shared `talks` schema (strict mapping: nothing else)."""
-    start_utc, end_utc = start.astimezone(UTC), end.astimezone(UTC)
-    title = str(talk["title"]).strip()
-    abstract = str(talk.get("abstract") or "").strip()
-    speakers = _string_list(talk.get("speakers"))
-    doc: dict[str, Any] = {
-        "id": talk_identifier(conference_id, talk, start_utc.isoformat()),
-        "source": TALK_SOURCE,
-        "conference_id": conference_id,
-        "year": start_utc.year,
-        "title": title,
-        "start": start_utc.isoformat(),
-        "end": end_utc.isoformat(),
-        "duration_s": int((end_utc - start_utc).total_seconds()),
-        "confirmed": True,
-        "semantic_content": f"{title}\n\n{abstract}" if abstract else title,
-    }
-    if abstract:
-        doc["abstract"] = abstract
-    if talk.get("conference"):
-        doc["conference"] = str(talk["conference"]).strip()
-    if speakers:
-        doc["speakers"] = speakers
-        doc["speakers_text"] = ", ".join(speakers)
-    speaker_ids = _string_list(talk.get("speaker_ids"))
-    if speaker_ids:
-        doc["speaker_ids"] = speaker_ids
-    tracks = _string_list(talk.get("tracks")) or _string_list(talk.get("tags"))
-    if tracks:
-        doc["tracks"] = tracks
-    for key in ("room", "url", "video_url", "language"):
-        if talk.get(key):
-            doc[key] = str(talk[key]).strip()
-    return doc
+        return provided.strip()
+    seed = "\n".join([conference_id, str(talk["title"]).strip(), start_time_utc])
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
 
 @app.post("/confirm-schedule")
@@ -571,10 +524,21 @@ async def confirm_schedule(
             raise HTTPException(422, "Talk times must be ISO-8601 timestamps") from exc
         if not start.tzinfo or not end.tzinfo or end <= start:
             raise HTTPException(422, "Talk times must be timezone-aware and end after start")
-        normalized.append(shared_talk_document(payload.conference_id, talk, start, end))
+        start_utc = start.astimezone(UTC).isoformat()
+        normalized.append(
+            talk
+            | {
+                "conference_id": payload.conference_id,
+                "talk_id": talk_identifier(payload.conference_id, talk, start_utc),
+                "start_time": start_utc,
+                "end_time": end.astimezone(UTC).isoformat(),
+                "confirmed": True,
+            }
+        )
     actions: list[dict[str, Any]] = []
     for talk in normalized:
-        actions.append({"index": {"_index": "talks", "_id": talk["id"]}})
+        doc_id = f"{payload.conference_id}:{talk['talk_id']}"
+        actions.append({"index": {"_index": "talks", "_id": doc_id}})
         actions.append(talk)
     for i in range(0, len(actions), BULK_BATCH_SIZE):
         batch = actions[i : i + BULK_BATCH_SIZE]
