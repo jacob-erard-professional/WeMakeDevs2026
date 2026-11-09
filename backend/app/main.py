@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import os
+import re
 import secrets
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
@@ -777,6 +778,63 @@ async def join_conference(conference_id: str) -> dict[str, Any]:
         "talk_count": len(hits),
         "talks": [hit["_source"] for hit in hits],
     }
+
+
+# Organizer scratch conferences that must never show up on the public landing tiles.
+TEST_CONFERENCE_RE = re.compile(r"test|delete me|smoke", re.IGNORECASE)
+UPCOMING_TALK_SOURCE = ["talk_id", "title", "start_time", "end_time", "room", "conference_id"]
+
+
+@app.get("/talks/upcoming")
+async def upcoming_talks(limit: int = Query(default=6, ge=1, le=24)) -> dict[str, Any]:
+    """Public tiles for the join page: the next confirmed talks across every conference.
+
+    Returns only talk identity, times, room and the conference's id and name. No attendee
+    data, no abstracts. Conferences whose name looks like a test are left out.
+    """
+    hits = await es_call(
+        "read_upcoming_talks",
+        lambda: es.search(
+            index="talks",
+            size=limit * 4,
+            source=UPCOMING_TALK_SOURCE,
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"confirmed": True}},
+                        {"range": {"start_time": {"gte": "now"}}},
+                    ]
+                }
+            },
+            sort=[{"start_time": {"order": "asc"}}],
+        )["hits"]["hits"],
+        **{"db.elasticsearch.index": "talks"},
+    )
+    conference_ids = sorted({hit["_source"]["conference_id"] for hit in hits})
+    names: dict[str, str] = {}
+    if conference_ids:
+        docs = await es_call(
+            "read_upcoming_conferences",
+            lambda: es.mget(index="conferences", ids=conference_ids, source_includes=["name"])[
+                "docs"
+            ],
+            **{"db.elasticsearch.index": "conferences"},
+        )
+        for doc in docs:
+            if doc.get("found"):
+                names[doc["_id"]] = str(doc["_source"].get("name") or "")
+    talks: list[dict[str, Any]] = []
+    for hit in hits:
+        source = hit["_source"]
+        name = names.get(source["conference_id"])
+        if not name or TEST_CONFERENCE_RE.search(name):
+            continue
+        talks.append(
+            {key: source.get(key) for key in UPCOMING_TALK_SOURCE} | {"conference_name": name}
+        )
+        if len(talks) >= limit:
+            break
+    return {"talks": talks}
 
 
 @app.get("/conferences/{conference_id}/schedule-status")

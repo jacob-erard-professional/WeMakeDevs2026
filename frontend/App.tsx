@@ -1,14 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
-import { talkDay } from './src/conference';
+import { formatTime, talkDay } from './src/conference';
 import { demoConference } from './src/demoConference';
-import { conferenceFromSchedule, joinLiveConference, normalizeRecommendations, saveLiveProfile } from './src/api';
-import type { LiveRecommendations } from './src/api';
+import { conferenceFromSchedule, joinLiveConference, loadUpcomingTalks, normalizeRecommendations, saveLiveProfile, venueMinutes } from './src/api';
+import type { LiveRecommendations, UpcomingTalk } from './src/api';
 import type { ParsedTalk } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
@@ -29,6 +29,46 @@ import { PastTalks } from './src/site/PastTalks';
 import { useRoute } from './src/site/router';
 import { Container, SiteShell } from './src/site/SiteShell';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './src/ui';
+
+const tileDay = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Denver', weekday: 'short', month: 'short', day: 'numeric',
+});
+
+function tileWhen(talk: UpcomingTalk) {
+  const stamp = Date.parse(talk.start_time);
+  const day = Number.isNaN(stamp) ? '' : `${tileDay.format(stamp)} · `;
+  return `${day}${formatTime(venueMinutes(talk.start_time))}${talk.room ? ` · ${talk.room}` : ''}`;
+}
+
+// Public "what's on next" tiles under the check-in form. Hidden when empty or unavailable.
+function UpcomingTalks({ onOpen, disabled }: { onOpen: (conferenceId: string) => void; disabled: boolean }) {
+  const [talks, setTalks] = useState<UpcomingTalk[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    loadUpcomingTalks(6, controller.signal)
+      .then((items) => { if (!controller.signal.aborted) setTalks(items); })
+      .catch(() => { /* no tiles; the page still works */ });
+    return () => controller.abort();
+  }, []);
+  if (!talks.length) return null;
+  return (
+    <View style={tiles.section}>
+      <Heading>Upcoming talks</Heading>
+      <View style={tiles.grid}>
+        {talks.map((talk) => (
+          <Pressable key={`${talk.conference_id}:${talk.talk_id}`} accessibilityRole="button" disabled={disabled}
+            accessibilityLabel={`${talk.title}, ${tileWhen(talk)}, ${talk.conference_name}. Open this conference.`}
+            onPress={() => onOpen(talk.conference_id)}
+            style={({ pressed }) => [tiles.tile, pressed && tiles.pressed]}>
+            <Text style={tiles.when}>{tileWhen(talk)}</Text>
+            <Text style={tiles.title} numberOfLines={3}>{talk.title}</Text>
+            <Text style={tiles.conference} numberOfLines={1}>{talk.conference_name}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function JoinConference({ conferences, linkCode, onJoin }: {
   conferences: Conference[];
@@ -96,6 +136,7 @@ function JoinConference({ conferences, linkCode, onJoin }: {
               <Action title="Join sample conference" onPress={() => onJoin(demoConference)} disabled={busy} secondary />
             </Section>
           </View>
+          <UpcomingTalks disabled={busy} onOpen={(conferenceId) => { setCode(conferenceId); void join(conferenceId); }} />
         </>
       )}
     </Flow>
@@ -338,6 +379,20 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+const tiles = StyleSheet.create({
+  section: { flexBasis: '100%', gap: 16, marginTop: 8 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
+  tile: {
+    flexBasis: 260, flexGrow: 1, maxWidth: 420, minHeight: 128, gap: 6, padding: 18,
+    backgroundColor: colors.white, borderWidth: 1, borderColor: colors.chrome, borderLeftWidth: 4,
+    borderLeftColor: colors.accent, borderRadius: 12,
+  },
+  pressed: { backgroundColor: colors.pale },
+  when: { color: colors.muted, fontSize: 13, fontWeight: '600' },
+  title: { color: colors.ink, fontSize: 17, fontWeight: '600', lineHeight: 22 },
+  conference: { color: colors.accent, fontSize: 13, fontWeight: '700', marginTop: 'auto' },
+});
 
 const layout = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },

@@ -71,6 +71,19 @@ export function venueMinutes(timestamp: string) {
   return value('hour') * 60 + value('minute');
 }
 
+export type UpcomingTalk = {
+  talk_id: string; title: string; start_time: string; end_time: string; room?: string | null;
+  conference_id: string; conference_name: string;
+};
+
+// Public tiles for the join page. Callers hide the section on any failure.
+export async function loadUpcomingTalks(limit = 6, signal?: AbortSignal): Promise<UpcomingTalk[]> {
+  const response = await request(`${apiBase}/talks/upcoming?limit=${limit}`, { signal }, 8000);
+  if (!response.ok) throw new Error('Could not load upcoming talks.');
+  const body = await response.json() as { talks?: UpcomingTalk[] };
+  return Array.isArray(body.talks) ? body.talks : [];
+}
+
 // `id` is a bare conference id; callers normalize join links with parseJoinCode first.
 export async function joinLiveConference(id: string, signal?: AbortSignal): Promise<Conference> {
   const response = await request(`${apiBase}/join/${encodeURIComponent(id)}`, { signal });
