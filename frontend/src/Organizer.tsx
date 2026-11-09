@@ -1,127 +1,260 @@
 import { getDocumentAsync } from 'expo-document-picker';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
+import { useRef, useState } from 'react';
+import { View } from 'react-native';
 
 import { confirmLiveSchedule, createLiveConference, parseLiveSchedule } from './api';
 import type { OrganizerSession, ParsedTalk } from './api';
+import type { ResumeAsset } from './conference';
+import { sampleSchedule } from './demoConference';
+import { EntryPass } from './EntryPass';
 import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
-import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
+import { parsePastedSchedule, validScheduleDate } from './scheduleText';
+import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
-type ScheduleAsset = { uri: string; name: string };
+const sources = ['Schedule link', 'Image or PDF', 'Paste text'] as const;
+type Source = typeof sources[number];
+type Draft = { talks: ParsedTalk[]; warnings: string[] };
+const scheduleTypes: Record<string, string> = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+};
 
 const venueTime = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit',
 });
 
-// Parsed schedules come from an LLM, so a timestamp may not be a valid date. Formatting an
-// invalid Date throws RangeError, which would take down the whole review screen.
 function displayTime(timestamp: string) {
   const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return timestamp.trim() || 'Time TBD';
-  return venueTime.format(date);
+  return Number.isNaN(date.getTime()) ? timestamp.trim() || 'Time TBD' : venueTime.format(date);
 }
 
-export function Organizer() {
+function validTalk(talk: ParsedTalk) {
+  const zoned = /(?:Z|[+-]\d{2}:\d{2})$/i;
+  return !!talk.title.trim() && zoned.test(talk.start_time) && zoned.test(talk.end_time)
+    && Date.parse(talk.end_time) > Date.parse(talk.start_time);
+}
+
+function validLink(value: string) {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+export function Organizer({ onPublishSample, onTrySample }: {
+  onPublishSample: (name: string, talks: ParsedTalk[]) => string;
+  onTrySample: (code: string) => void;
+}) {
   const [name, setName] = useState('');
-  const [session, setSession] = useState<OrganizerSession>();
+  const [date, setDate] = useState('');
+  const [venue, setVenue] = useState('');
+  const [description, setDescription] = useState('');
+  const [session, setSession] = useState<OrganizerSession | { name: string; sample: true }>();
+  const [sampleMode, setSampleMode] = useState(false);
+  const [source, setSource] = useState<Source>('Schedule link');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [asset, setAsset] = useState<ScheduleAsset>();
-  const [draft, setDraft] = useState<{ talks: ParsedTalk[]; warnings: string[] }>();
-  const [published, setPublished] = useState(false);
+  const [asset, setAsset] = useState<ResumeAsset>();
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState<Draft>();
+  const [editingTalk, setEditingTalk] = useState<number>();
+  const [publishedCode, setPublishedCode] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const inProgress = useRef(false);
 
-  async function createConference() {
+  async function run(operation: () => Promise<void>, fallback: string) {
+    if (inProgress.current) return;
+    inProgress.current = true;
+    setBusy(true);
+    setError('');
+    try { await operation(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : fallback); }
+    finally { inProgress.current = false; setBusy(false); }
+  }
+
+  function createConference() {
     if (!name.trim()) { setError('Enter a conference name first.'); return; }
-    setBusy(true); setError('');
-    try { setSession(await createLiveConference(name.trim())); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not create the conference.'); }
-    finally { setBusy(false); }
+    if (date && !validScheduleDate(date)) { setError('Enter the event date in YYYY-MM-DD format.'); return; }
+    if (sampleMode) {
+      setError('');
+      setSession({ name: name.trim(), sample: true });
+      return;
+    }
+    void run(async () => setSession(await createLiveConference(name.trim())), 'Could not create the conference.');
   }
 
   async function chooseFile() {
     setError('');
-    const result = await getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: false });
-    if (!result.canceled) { setAsset(result.assets[0]); setSourceUrl(''); setDraft(undefined); }
+    try {
+      const result = await getDocumentAsync({
+        type: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
+        copyToCacheDirectory: true,
+        base64: false,
+      });
+      if (result.canceled) return;
+      const selected = result.assets[0];
+      if ((selected.size ?? 0) > 10 * 1024 * 1024) { setError('Choose a file under 10 MiB.'); return; }
+      const detectedType = selected.mimeType || selected.file?.type;
+      const mimeType = detectedType && detectedType !== 'application/octet-stream' ? detectedType
+        : scheduleTypes[selected.name.split('.').pop()?.toLowerCase() ?? ''];
+      if (!Object.values(scheduleTypes).includes(mimeType)) {
+        setError('Choose a PDF, PNG, JPEG, or WebP schedule.');
+        return;
+      }
+      setAsset({ ...selected, mimeType });
+      setDraft(undefined);
+    } catch {
+      setError('Could not open the file picker.');
+    }
   }
 
-  async function parseSchedule() {
+  function reviewSchedule() {
     if (!session) return;
-    setBusy(true); setError('');
-    try { setDraft(await parseLiveSchedule(session, sourceUrl.trim() || undefined, asset)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not parse the schedule.'); }
-    finally { setBusy(false); }
+    setError('');
+    setEditingTalk(undefined);
+    if ('sample' in session || source === 'Paste text') {
+      setDraft(parsePastedSchedule(text, date));
+      return;
+    }
+    if (source === 'Schedule link' && !validLink(sourceUrl.trim())) {
+      setError('Enter a public HTTP or HTTPS schedule link.');
+      return;
+    }
+    void run(async () => {
+      setDraft(await parseLiveSchedule(session, source === 'Schedule link' ? sourceUrl.trim() : undefined, source === 'Image or PDF' ? asset : undefined));
+    }, 'Could not import the schedule.');
   }
 
-  async function publish() {
+  function editTalk(index: number, update: Partial<ParsedTalk>) {
+    setDraft((current) => current && {
+      ...current, talks: current.talks.map((talk, position) => position === index ? { ...talk, ...update } : talk),
+    });
+  }
+
+  function publish() {
     if (!session || !draft?.talks.length) return;
-    setBusy(true); setError('');
-    try { await confirmLiveSchedule(session, draft.talks); setPublished(true); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not publish the schedule.'); }
-    finally { setBusy(false); }
+    if ('sample' in session) {
+      setPublishedCode(onPublishSample(session.name, draft.talks));
+      return;
+    }
+    void run(async () => {
+      await confirmLiveSchedule(session, draft.talks);
+      setPublishedCode(session.conferenceId);
+    }, 'Could not publish the schedule.');
   }
 
   function reset() {
-    setPublished(false); setSession(undefined); setDraft(undefined);
-    setAsset(undefined); setSourceUrl(''); setName('');
+    setPublishedCode(undefined);
+    setSampleMode(false);
+    setSession(undefined);
+    setDraft(undefined);
+    setEditingTalk(undefined);
+    setAsset(undefined);
+    setSourceUrl('');
+    setText('');
+    setName('');
+    setVenue('');
+    setDate('');
+    setDescription('');
+    setSource('Schedule link');
+    setError('');
   }
 
-  if (published && session) {
-    // The QR encodes the web app's /join/<id> link so a phone camera lands on the join screen.
-    const link = joinUrl(session.conferenceId);
+  function loadSample() {
+    setSampleMode(true);
+    setName('Sample Cloud Native Conference');
+    setDate('2026-11-09');
+    setVenue('Summit Conference Center');
+    setDescription('A day of talks for people who build and operate software platforms.');
+    setSource('Paste text');
+    setText(sampleSchedule);
+    setError('');
+  }
+
+  if (publishedCode && session) {
     return (
-      <Flow step="published" style={styles.section}>
-        <Label>ATTENDEE ENTRY PASS</Label>
-        <Heading large>{session.name}</Heading>
-        <View style={passStyles.pass}>
-          <View accessible accessibilityRole="image" accessibilityLabel={`QR code linking to ${link}`}>
-            <QRCode value={link} size={132} quietZone={28} />
-          </View>
-          <View style={passStyles.details}>
-            <Label>JOIN CODE</Label>
-            <Text selectable style={passStyles.code}>{session.conferenceId}</Text>
-            <Text selectable style={passStyles.link}>{link}</Text>
-            <Copy>Scan with your phone camera to open the join link, or type the code at check-in.</Copy>
-          </View>
-        </View>
-        <Action title="Create another conference" onPress={reset} secondary />
+      <Flow step="published">
+        <EntryPass name={session.name} code={publishedCode} link={joinUrl(publishedCode)}
+          details={[date, venue, description].filter(Boolean).join(' · ')} onReset={reset}
+          onTrySample={'sample' in session ? () => onTrySample(publishedCode) : undefined} />
       </Flow>
     );
   }
 
+  const canReview = source === 'Schedule link' ? !!sourceUrl.trim() : source === 'Image or PDF' ? !!asset : !!text.trim();
+  const invalidTalks = draft?.talks.some((talk) => !validTalk(talk));
+  const canPublish = !!draft?.talks.length && (source !== 'Paste text' || !draft.warnings.length) && !invalidTalks;
+
   return (
-    <Flow step={session ? 'schedule' : 'create'} style={styles.stack}>
-      <Heading large>{session ? `Schedule for ${session.name}` : 'Create a conference'}</Heading>
+    <Flow step={session ? 'schedule' : 'details'} style={styles.stack}>
+      <Label>{session ? 'Step 2 of 2 · Schedule' : 'Step 1 of 2 · Event details'}</Label>
+      <Heading large>{session ? 'Add your sessions' : 'Create a conference'}</Heading>
+      {sampleMode ? <Message>Sample mode. This conference stays in this app session.</Message> : null}
       {!session ? <Section>
-        <Copy>Create a private organizer session, then import a schedule for review.</Copy>
-        <Field label="Conference name" value={name} onChangeText={setName} maxLength={160} />
-        <Action title={busy ? 'Creating conference…' : 'Create conference'} onPress={createConference} disabled={busy} />
+        <Action title={sampleMode ? 'Switch to live setup' : 'Try sample organizer flow'} disabled={busy}
+          onPress={sampleMode ? reset : loadSample} secondary />
+        <Field label="Conference name" value={name} onChangeText={setName} maxLength={160} editable={!busy} />
+        <Field label="Event date (optional)" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} maxLength={10} editable={!busy} />
+        <Field label="Venue or location (optional)" value={venue} onChangeText={setVenue} maxLength={160} editable={!busy} />
+        <Field label="Description (optional)" value={description} onChangeText={setDescription} maxLength={600} multiline editable={!busy} />
+        <Copy>The date, venue, and description stay in this organizer session. Attendees see the conference name and published schedule.</Copy>
+        <Action title={busy ? 'Creating conference…' : 'Continue to schedule'} onPress={createConference} disabled={busy} />
       </Section> : <Section>
-        <Copy>Paste a schedule link or upload a PDF/image. It stays private until you confirm it.</Copy>
-        <Field label="Schedule link" value={sourceUrl} onChangeText={(value) => { setSourceUrl(value); setAsset(undefined); setDraft(undefined); }} autoCapitalize="none" keyboardType="url" placeholder="https://…" />
-        <View style={styles.row}>
-          <Action title="Choose PDF or image" onPress={chooseFile} secondary disabled={busy} />
-          {asset ? <Copy>Selected: {asset.name}</Copy> : null}
-        </View>
-        <Action title={busy ? 'Parsing schedule…' : 'Parse schedule'} onPress={parseSchedule} disabled={busy || (!sourceUrl.trim() && !asset)} />
+        <Copy>Import a schedule for {session.name}. Review the sessions before sharing the event.</Copy>
+        {sampleMode ? null : <View style={styles.row}>
+          {sources.map((item) => <Action key={item} title={item} selected={source === item} disabled={busy}
+            onPress={() => { setSource(item); setDraft(undefined); setEditingTalk(undefined); setError(''); }} secondary />)}
+        </View>}
+        {source === 'Schedule link' ? (
+          <Field label="Public schedule URL" value={sourceUrl} autoCapitalize="none" keyboardType="url"
+            placeholder="https://…" maxLength={2000} editable={!busy}
+            onChangeText={(value) => { setSourceUrl(value); setDraft(undefined); }} />
+        ) : source === 'Image or PDF' ? (
+          <>
+            <Copy>Use a PDF, PNG, JPEG, or WebP file up to 10 MiB.</Copy>
+            <Action title="Choose schedule file" onPress={() => void chooseFile()} disabled={busy} secondary />
+            {asset ? <Copy>Selected: {asset.name}</Copy> : null}
+          </>
+        ) : (
+          <>
+            <Copy>Paste one session per line as start | end | title | track | room. Use 24-hour Mountain Time.</Copy>
+            <Field label="Schedule date" value={date} placeholder="YYYY-MM-DD" maxLength={10} editable={!busy}
+              onChangeText={(value) => { setDate(value); setDraft(undefined); }} />
+            <Field label="Schedule text" value={text} placeholder="09:00 | 09:45 | Opening keynote | General | Main hall" multiline maxLength={20000}
+              editable={!busy} onChangeText={(value) => { setText(value); setDraft(undefined); }} />
+          </>
+        )}
+        <Action title={busy ? 'Working…' : 'Preview schedule'} onPress={reviewSchedule} disabled={busy || !canReview} />
       </Section>}
-      {error ? <Message error>{error}</Message> : null}
       {draft ? <Section>
-        <Heading>Review parsed schedule</Heading>
-        {draft.warnings.map((warning) => <Message key={warning} error>{warning}</Message>)}
+        <Heading>Review schedule</Heading>
+        {draft.warnings.map((warning, index) => <Message key={index} error>{warning}</Message>)}
         {!draft.talks.length ? <Message error>No usable sessions were found. Try another source.</Message> : null}
-        {draft.talks.map((talk, index) => <Copy key={`${talk.title}-${index}`}>{displayTime(talk.start_time)} to {displayTime(talk.end_time)} · {talk.title} · {talk.room || 'Room TBA'}</Copy>)}
-        <Action title={busy ? 'Publishing…' : 'Confirm and publish'} onPress={publish} disabled={busy || !draft.talks.length} />
+        {draft.talks.map((talk, index) => (
+          <View key={index} style={styles.stack}>
+            <Heading>{talk.title || 'Untitled session'}</Heading>
+            <Copy>{displayTime(talk.start_time)} to {displayTime(talk.end_time)} · {talk.room || 'Room TBA'}</Copy>
+            <Action title={editingTalk === index ? 'Done editing' : `Edit session ${index + 1}`}
+              onPress={() => setEditingTalk(editingTalk === index ? undefined : index)} disabled={busy} secondary />
+            {editingTalk === index ? (
+              <>
+                <Field label="Session title" value={talk.title} editable={!busy} onChangeText={(title) => editTalk(index, { title })} />
+                <Field label="Room" value={talk.room ?? ''} editable={!busy} onChangeText={(room) => editTalk(index, { room })} />
+                <Field label="Starts at (ISO timestamp)" value={talk.start_time} editable={!busy} autoCapitalize="none"
+                  onChangeText={(start_time) => editTalk(index, { start_time })} />
+                <Field label="Ends at (ISO timestamp)" value={talk.end_time} editable={!busy} autoCapitalize="none"
+                  onChangeText={(end_time) => editTalk(index, { end_time })} />
+                <Field label="Abstract" multiline value={talk.abstract ?? ''} editable={!busy} onChangeText={(abstract) => editTalk(index, { abstract })} />
+              </>
+            ) : null}
+          </View>
+        ))}
+        {invalidTalks ? <Message error>Each session needs a title and valid start and end times with a time zone offset.</Message> : null}
+        <Action title={busy ? 'Publishing…' : 'Confirm and publish'} onPress={publish} disabled={busy || !canPublish} />
       </Section> : null}
+      {error ? <Message error>{error}</Message> : null}
     </Flow>
   );
 }
-
-const passStyles = StyleSheet.create({
-  pass: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 20, rowGap: 12 },
-  details: { flexGrow: 1, flexBasis: 185, gap: 6, paddingVertical: 12 },
-  code: { color: colors.ink, fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  link: { color: colors.muted, fontSize: 13 },
-});

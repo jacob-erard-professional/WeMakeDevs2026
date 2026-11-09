@@ -5,9 +5,11 @@ export type Talk = TimeRange & {
   title: string;
   track: string;
   room: string;
+  abstract?: string;
+  startsAt?: string;
 };
 
-export type Conference = { name: string; code: string; talks: Talk[] };
+export type Conference = { name: string; code: string; talks: Talk[]; sample?: true };
 
 // A picked résumé. expo-document-picker gives a `file` on web and a `uri` on native; the
 // document itself is only ever sent to /save-user-data, which extracts text and discards it.
