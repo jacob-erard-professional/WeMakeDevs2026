@@ -6,7 +6,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
-import { conferenceFromSchedule, joinLiveConference, saveLiveProfile } from './src/api';
+import { conferenceFromSchedule, joinLiveConference, normalizeRecommendations, saveLiveProfile } from './src/api';
+import type { LiveRecommendations } from './src/api';
 import type { ParsedTalk } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
@@ -110,6 +111,7 @@ export default function App() {
   const [previousResume, setPreviousResume] = useState<PreviousResume>();
   const [requested, setRequested] = useState<string[]>([]);
   const [attendeeToken, setAttendeeToken] = useState<string>();
+  const [recommendations, setRecommendations] = useState<LiveRecommendations>();
   const [browsingSchedule, setBrowsingSchedule] = useState(false);
   const [resumeTalk, setResumeTalk] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -130,12 +132,14 @@ export default function App() {
     setConference(next);
     setRequested([]);
     setResumeTalk(undefined);
-    // Restore whatever this browser remembers for the conference.
+    // Restore whatever this browser remembers for the conference, including the server's
+    // last recommendations so a reload on /plan shows them without another save.
     const stored = next ? attendeeSessions.load(next.code) : undefined;
     const saved = stored?.saved ? fromStoredProfile(stored.saved) : undefined;
     const unsaved = stored?.draft ? fromStoredProfile(stored.draft) : undefined;
     const resumeName = unsaved?.resumeName ?? saved?.resumeName;
     setAttendeeToken(stored?.attendeeToken);
+    setRecommendations(saved && stored?.recommendations ? normalizeRecommendations(stored.recommendations) : undefined);
     setProfile(saved?.profile);
     setDraft(unsaved?.profile ?? saved?.profile);
     setPreviousResume(resumeName ? { name: resumeName, onServer: !unsaved && !!saved?.resumeName } : undefined);
@@ -159,6 +163,7 @@ export default function App() {
     if (draftTimer.current) clearTimeout(draftTimer.current);
     attendeeSessions.clear(activeConference.code);
     setAttendeeToken(undefined);
+    setRecommendations(undefined);
     setProfile(undefined);
     setDraft(undefined);
     setPreviousResume(undefined);
@@ -190,17 +195,20 @@ export default function App() {
   async function saveProfile(next: Attendee) {
     if (!activeConference) return;
     let token = attendeeToken;
+    let live: LiveRecommendations | undefined;
     if (!activeConference.sample) {
       // The bearer token makes this an update of the same attendee rather than a duplicate.
       const result = await saveLiveProfile(activeConference, next, attendeeToken);
       if (scope.current !== activeConference) return;
       if (result.attendee_token) token = result.attendee_token;
+      live = result.recommendations;
     }
     if (draftTimer.current) clearTimeout(draftTimer.current);
     const resumeName = next.resume?.name ?? previousResume?.name;
     attendeeSessions.update(activeConference.code, {
-      attendeeToken: token, saved: toStoredProfile(next, previousResume?.name), draft: undefined,
+      attendeeToken: token, saved: toStoredProfile(next, previousResume?.name), draft: undefined, recommendations: live,
     });
+    setRecommendations(live);
     setAttendeeToken(token);
     setProfile(next);
     setDraft(next);
@@ -264,6 +272,7 @@ export default function App() {
                       onStepChange={(next) => navigate(joinPath(activeConference.code, next))} />
                   ) : profile ? (
                     <Recommendations conference={activeConference} profile={profile} attendeeToken={attendeeToken} requested={requested}
+                      recommendations={recommendations}
                       onEdit={editProfile}
                       onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
                   ) : null}
