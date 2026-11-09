@@ -1,37 +1,42 @@
 #!/usr/bin/env python3
-"""Seed one demo conference through the public HTTP API.
+"""Seed one live demo conference through the public HTTP API.
 
-Talks go in via POST /confirm-schedule (organizer key), attendees via POST /save-user-data.
-Elasticsearch is never touched directly. Stdlib only; Python 3.11+.
+Flow: POST /conferences (no auth) creates the conference and returns an organizer token;
+POST /confirm-schedule (header X-Organizer-Token) stores 20 talks; POST /save-user-data
+(multipart, `profile` JSON field) creates 10 fake attendees. Elasticsearch is never touched
+directly. Stdlib only; Python 3.11+.
 
-    python3 scripts/seed_demo.py --base-url https://wearedevs.cnh.radarhq.io/api
-    python3 scripts/seed_demo.py --dry-run          # print payload shapes, no network
+    python3 scripts/seed_demo.py                      # against prod
+    python3 scripts/seed_demo.py --base-url http://localhost:8000
+    python3 scripts/seed_demo.py --dry-run            # print payload shapes, no network
+    python3 scripts/seed_demo.py --new-conference     # ignore the saved conference, make another
 
-ORGANIZER_API_KEY is read from the environment or from `.env` in the repo root. Attendee
-bearer tokens are written to a gitignored, mode-600 file (default `.demo-tokens.json`) so a
-presenter can log in as a fake attendee. Re-running is idempotent: talks carry stable
-`talk_id`s so confirm-schedule overwrites them, and attendees whose token is already in the
-tokens file are updated in place instead of duplicated. Nothing secret is ever printed.
+The organizer token and attendee bearer tokens are written to the gitignored, mode-600 file
+scripts/.seed-organizer.json and are never printed. Re-running reuses the saved conference:
+talks carry stable `talk_id`s so confirm-schedule overwrites them, and attendees whose token
+is saved are updated in place instead of duplicated. Only the conference_id, join URL and
+counts are printed.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import stat
 import sys
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_BASE_URL = "https://wearedevs.cnh.radarhq.io/api"
-DEFAULT_TOKENS_FILE = REPO_ROOT / ".demo-tokens.json"
+PUBLIC_SITE = "https://wearedevs.cnh.radarhq.io"
+DEFAULT_STATE_FILE = SCRIPT_DIR / ".seed-organizer.json"
 
-CONFERENCE_ID = "cnh-slc-2026"
-CONFERENCE_NAME = "Cloud Native Hackathon @ KubeCon NA 2026"
+CONFERENCE_NAME = "Cloud Native Hackathon SLC 2026"
+TALK_ID_PREFIX = "cnh-slc-2026"
 # Nov 9 2026, Salt Lake City. DST ended Nov 1, so America/Denver is MST (-07:00).
 DAY = "2026-11-09"
 TZ = "-07:00"
@@ -52,7 +57,7 @@ def talk(
     abstract: str,
 ) -> dict[str, Any]:
     return {
-        "talk_id": f"{CONFERENCE_ID}-t{num:02d}",
+        "talk_id": f"{TALK_ID_PREFIX}-t{num:02d}",
         "title": title,
         "start_time": at(start),
         "end_time": at(end),
@@ -271,57 +276,47 @@ TALKS: list[dict[str, Any]] = [
 def attendee(
     name: str,
     bio: str,
+    looking_for: str,
     interests: list[str],
     *,
-    email: str | None = None,
     linkedin_url: str | None = None,
     discovery_opt_in: bool = True,
     blockout_times: list[dict[str, str]] | None = None,
-    resume_text: str | None = None,
-    resume_public: bool = False,
 ) -> dict[str, Any]:
     handle = name.lower().replace(" ", ".")
     payload: dict[str, Any] = {
-        "conference_id": CONFERENCE_ID,
         "name": name,
-        "email": email or f"{handle}@example.com",
+        "email": f"{handle}@example.com",
         "bio": bio,
+        "looking_for": looking_for,
         "interests": interests,
         "blockout_times": blockout_times or [],
         "discovery_opt_in": discovery_opt_in,
-        "resume_public": resume_public,
     }
     if linkedin_url:
         payload["linkedin_url"] = linkedin_url
-    if resume_text:
-        payload["resume_text"] = resume_text
     return payload
 
 
-# Clearly fake names; example.com emails; no real people.
+# Clearly fake names; example.com emails; no real people. No resumes.
 ATTENDEES: list[dict[str, Any]] = [
     attendee(
         "Zephyr Quillfeather",
         "Platform engineer at a mid-size fintech. I run our internal developer platform on "
         "Kubernetes with Argo CD and Crossplane and spend most of my time making golden paths "
         "developers actually follow. Trying to figure out whether Backstage is worth the upkeep.",
+        "Other platform teams who have run Backstage in production for more than a year and can "
+        "tell me honestly whether the scaffolder and catalog paid for themselves.",
         ["platform engineering", "gitops", "argo cd", "crossplane", "backstage", "developer experience"],
         linkedin_url="https://www.linkedin.com/in/zephyr-quillfeather-demo",
-        resume_text=(
-            "Zephyr Quillfeather. Staff Platform Engineer, 2022-present: built a multi-tenant "
-            "Kubernetes platform serving 300 developers; introduced Argo CD ApplicationSets, "
-            "Crossplane compositions for RDS and S3, and a Backstage portal. Previously SRE, "
-            "2018-2022: owned Prometheus and Alertmanager, migrated 80 services to Helm, cut "
-            "deploy lead time from days to under an hour. Skills: Kubernetes, Go, Terraform, "
-            "Argo CD, Crossplane, Prometheus, Grafana, AWS."
-        ),
-        resume_public=True,
     ),
     attendee(
         "Marisol Vantablack",
         "SRE on a 24/7 on-call rotation for a streaming company. Deep into OpenTelemetry, SLOs, "
         "and burn-rate alerting. Currently ripping out three vendor agents and replacing them "
         "with one Collector pipeline, and curious about eBPF-based profiling.",
+        "People running a single OpenTelemetry Collector pipeline at scale, and anyone using "
+        "continuous profiling to cut on-call toil.",
         ["observability", "opentelemetry", "slos", "prometheus", "ebpf", "on-call"],
         blockout_times=[{"start_time": at("13:20"), "end_time": at("14:00")}],
     ),
@@ -330,6 +325,8 @@ ATTENDEES: list[dict[str, Any]] = [
         "Security engineer focused on Kubernetes supply chain and runtime policy. I maintain "
         "our Kyverno policy library, sign everything with Sigstore, and am evaluating Cilium "
         "network policy to replace our IP-based rules. Happy to compare admission controller notes.",
+        "Teams that have migrated from Calico to Cilium identity-based policy, and anyone "
+        "enforcing Sigstore provenance at admission in production.",
         ["security", "supply chain", "sigstore", "kyverno", "cilium", "zero trust"],
         linkedin_url="https://www.linkedin.com/in/thaddeus-moonbeam-okafor-demo",
     ),
@@ -338,22 +335,17 @@ ATTENDEES: list[dict[str, Any]] = [
         "ML platform engineer. I run GPU clusters for an applied research team: vLLM serving, "
         "Kubeflow training jobs, and a lot of arguing with the scheduler. Interested in RAG "
         "retrieval quality and how people are doing vector search at scale.",
+        "Search engineers who can help me measure and improve retrieval quality for RAG, and "
+        "anyone autoscaling LLM inference on queue depth.",
         ["ai/ml on k8s", "gpu scheduling", "vllm", "kubeflow", "rag", "vector search"],
-        resume_text=(
-            "Juniper Hollowell-Zane. ML Platform Engineer, 2021-present: operate 120-GPU "
-            "Kubernetes clusters; deployed vLLM and KServe inference with KEDA autoscaling; "
-            "built Argo Workflows pipelines for embedding generation into Elasticsearch; "
-            "reduced training job queue time 60 percent with Volcano gang scheduling. Earlier: "
-            "data engineer on Spark and Airflow. Skills: Python, PyTorch, Kubernetes, CUDA, "
-            "Kubeflow, Elasticsearch, Ray."
-        ),
-        resume_public=False,
     ),
     attendee(
         "Octavia Brightwater-Ng",
         "Search engineer. I own the Elasticsearch clusters behind a product catalog and am "
         "moving from pure BM25 to hybrid retrieval with semantic_text. Want to talk HNSW "
         "tuning, quantization, and memory sizing with anyone who has been burned by it.",
+        "ML platform folks building RAG pipelines on top of Elasticsearch, and operators who "
+        "have sized kNN workloads on Kubernetes.",
         ["search", "elasticsearch", "vector search", "hybrid search", "relevance", "hnsw"],
         linkedin_url="https://www.linkedin.com/in/octavia-brightwater-ng-demo",
     ),
@@ -362,6 +354,8 @@ ATTENDEES: list[dict[str, Any]] = [
         "Kernel-adjacent backend developer learning eBPF. Shipped a small libbpf tool to trace "
         "slow syscalls in our ingest service and now want to understand Cilium and Parca "
         "internals. Also interested in networking debugging war stories.",
+        "eBPF practitioners willing to review a small libbpf tool and point me at the sharp "
+        "edges of CO-RE, plus network engineers with Kubernetes DNS debugging stories.",
         ["ebpf", "linux", "networking", "cilium", "profiling", "performance"],
     ),
     attendee(
@@ -369,6 +363,8 @@ ATTENDEES: list[dict[str, Any]] = [
         "Engineering manager for a platform team of eight. Less hands-on these days; I care "
         "about measuring developer experience, multi-tenancy trade-offs, and how to justify "
         "platform investment to leadership. Looking to meet other platform leads.",
+        "Other platform engineering leads who have made the multi-tenancy call between "
+        "namespaces, vCluster and separate clusters, and can share the cost numbers.",
         ["platform engineering", "multi-tenancy", "developer experience", "leadership", "cost"],
         blockout_times=[
             {"start_time": at("11:40"), "end_time": at("12:20")},
@@ -380,6 +376,8 @@ ATTENDEES: list[dict[str, Any]] = [
         "DevOps engineer at a healthcare startup doing GitOps with Argo CD and Argo Rollouts. "
         "Working on progressive delivery with Prometheus-gated canaries and on getting secrets "
         "out of git with External Secrets Operator. Compliance makes everything twice as hard.",
+        "Anyone running Argo Rollouts analysis against Prometheus or OpenTelemetry metrics, and "
+        "security people who have audited secrets management in a regulated environment.",
         ["gitops", "argo rollouts", "progressive delivery", "secrets management", "compliance"],
         linkedin_url="https://www.linkedin.com/in/lysander-peregrine-mbatha-demo",
     ),
@@ -388,6 +386,8 @@ ATTENDEES: list[dict[str, Any]] = [
         "Data scientist dipping into infrastructure. I build RAG applications and keep hitting "
         "retrieval quality walls; I want to understand chunking, reranking, and what the "
         "Kubernetes people mean when they say my pipeline is not production-ready.",
+        "Patient infrastructure engineers who can explain what production-ready means for an "
+        "embedding pipeline, and search people who have tuned chunking and reranking.",
         ["rag", "llms", "embeddings", "search", "python"],
         discovery_opt_in=False,
     ),
@@ -396,6 +396,8 @@ ATTENDEES: list[dict[str, Any]] = [
         "Network engineer moving into cloud native. Spent a decade on BGP and firewalls, now "
         "debugging CoreDNS timeouts and conntrack exhaustion in Kubernetes. Interested in "
         "zero trust networking and in whether eBPF datapaths will finally make kube-proxy go away.",
+        "Cilium users who replaced kube-proxy with the eBPF datapath, and anyone with a "
+        "repeatable method for chasing intermittent DNS failures in clusters.",
         ["networking", "zero trust", "cilium", "dns", "ebpf", "kubernetes"],
         discovery_opt_in=False,
     ),
@@ -411,61 +413,75 @@ class ApiError(RuntimeError):
         self.status = status
 
 
-def post_json(
-    base_url: str, path: str, payload: dict[str, Any], headers: dict[str, str], timeout: float
+def _request(
+    base_url: str, path: str, body: bytes, headers: dict[str, str], timeout: float
 ) -> dict[str, Any]:
-    data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         base_url.rstrip("/") + path,
-        data=data,
+        data=body,
         method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json", **headers},
+        headers={"Accept": "application/json", **headers},
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise ApiError(exc.code, body) from None
+        raise ApiError(exc.code, exc.read().decode("utf-8", errors="replace")) from None
 
 
-def load_organizer_key() -> str:
-    key = os.environ.get("ORGANIZER_API_KEY", "").strip()
-    if key:
-        return key
-    env_file = REPO_ROOT / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("ORGANIZER_API_KEY="):
-                value = line.split("=", 1)[1].strip().strip("'\"")
-                if value and not value.startswith("<"):
-                    return value
-    sys.exit("ORGANIZER_API_KEY is not set (env or .env in the repo root).")
+def post_json(
+    base_url: str, path: str, payload: dict[str, Any], headers: dict[str, str], timeout: float
+) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    return _request(base_url, path, body, {"Content-Type": "application/json", **headers}, timeout)
 
 
-# --- Tokens file -----------------------------------------------------------------------------
+def post_profile_multipart(
+    base_url: str, profile: dict[str, Any], headers: dict[str, str], timeout: float
+) -> dict[str, Any]:
+    """/save-user-data as multipart/form-data with a JSON `profile` field and no resume."""
+    boundary = f"----seed{uuid.uuid4().hex}"
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="profile"\r\n'
+        "Content-Type: application/json\r\n\r\n"
+        f"{json.dumps(profile)}\r\n"
+        f"--{boundary}--\r\n"
+    ).encode("utf-8")
+    content_type = f"multipart/form-data; boundary={boundary}"
+    return _request(
+        base_url, "/save-user-data", body, {"Content-Type": content_type, **headers}, timeout
+    )
 
 
-def read_tokens(path: Path) -> dict[str, dict[str, str]]:
+def get_json(base_url: str, path: str, timeout: float) -> dict[str, Any]:
+    req = urllib.request.Request(base_url.rstrip("/") + path, headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as exc:
+        raise ApiError(exc.code, exc.read().decode("utf-8", errors="replace")) from None
+
+
+# --- State file (organizer token + attendee tokens; never printed) ---------------------------
+
+
+def read_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError:
         return {}
-    return data.get("attendees", {}) if isinstance(data, dict) else {}
+    return data if isinstance(data, dict) else {}
 
 
-def write_tokens(path: Path, attendees: dict[str, dict[str, str]]) -> None:
-    body = {
-        "conference_id": CONFERENCE_ID,
-        "note": "Demo attendee bearer tokens. Gitignored. Send as 'Authorization: Bearer <token>'.",
-        "attendees": attendees,
-    }
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, 'w') as file:
-        file.write(json.dumps(body, indent=2) + "\n")
+def write_state(path: Path, state: dict[str, Any]) -> None:
+    state["note"] = (
+        "Seeded demo conference secrets. Gitignored. organizer_token goes in header "
+        "X-Organizer-Token; attendee tokens go in 'Authorization: Bearer <token>'."
+    )
+    path.write_text(json.dumps(state, indent=2) + "\n")
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
@@ -495,20 +511,15 @@ def print_smoke_check(name: str, recommendations: dict[str, Any]) -> None:
     talks = recommendations.get("talks", []) or []
     print("  Top talks:")
     for hit in talks[:3]:
-        score = hit.get("score", hit.get("_score"))
-        suffix = f" (score {score:.3f})" if isinstance(score, (int, float)) else ""
-        print(f"    - {hit.get('title', '?')}{suffix}")
+        print(f"    - {hit.get('title', '?')}")
     if not talks:
         print("    (none)")
     people = flatten_people(recommendations.get("attendees"))
     print("  Top people:")
     for person in people[:3]:
-        score = person.get("score")
-        suffix = f" (score {score:.3f})" if isinstance(score, (int, float)) else ""
-        why = person.get("why")
-        print(f"    - {person.get('name', '?')}{suffix}")
-        if why:
-            print(f"        why: {str(why)[:160]}")
+        print(f"    - {person.get('name', '?')}")
+        if person.get("why"):
+            print(f"        why: {str(person['why'])[:160]}")
     if not people:
         print("    (none)")
 
@@ -517,30 +528,30 @@ def print_smoke_check(name: str, recommendations: dict[str, Any]) -> None:
 
 
 def dry_run() -> None:
-    print(f"Conference: {CONFERENCE_NAME} ({CONFERENCE_ID}), {DAY} {TZ}")
-    print(f"\nPOST /confirm-schedule  (header X-Organizer-Key)  talks={len(TALKS)}")
-    rooms = sorted({t["room"] for t in TALKS})
-    tracks = sorted({t["track"] for t in TALKS})
-    print(f"  rooms={rooms}\n  tracks={tracks}")
+    print(f"Conference: {CONFERENCE_NAME}, {DAY} {TZ}")
+    print("\nPOST /conferences  (no auth)  body={'name': ...} -> conference_id + organizer_token")
+    print(f"\nPOST /confirm-schedule  (header X-Organizer-Token)  talks={len(TALKS)}")
+    print(f"  rooms={sorted({t['room'] for t in TALKS})}")
+    print(f"  tracks={sorted({t['track'] for t in TALKS})}")
     print("  sample talk:")
     print("  " + json.dumps(TALKS[1], indent=2).replace("\n", "\n  "))
-    print(f"\nPOST /save-user-data  attendees={len(ATTENDEES)}")
+    print(f"\nPOST /save-user-data  (multipart, field 'profile')  attendees={len(ATTENDEES)}")
     opt_in = sum(a["discovery_opt_in"] for a in ATTENDEES)
-    with_resume = sum("resume_text" in a for a in ATTENDEES)
     with_blockouts = sum(bool(a["blockout_times"]) for a in ATTENDEES)
-    print(f"  discovery_opt_in={opt_in}  resume_text={with_resume}  blockout_times={with_blockouts}")
-    sample = dict(ATTENDEES[0])
-    if "resume_text" in sample:
-        sample["resume_text"] = sample["resume_text"][:60] + "..."
-    print("  sample attendee:")
-    print("  " + json.dumps(sample, indent=2).replace("\n", "\n  "))
+    print(f"  discovery_opt_in={opt_in}  blockout_times={with_blockouts}  resumes=0")
+    print("  sample profile (conference_id filled at runtime):")
+    print("  " + json.dumps(ATTENDEES[0], indent=2).replace("\n", "\n  "))
+    print("\nGET /join/<conference_id>  (public) -> confirmed talks")
     print("\nDry run: no requests sent.")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help=f"API base URL (default {DEFAULT_BASE_URL})")
-    parser.add_argument("--tokens-file", type=Path, default=DEFAULT_TOKENS_FILE, help="where attendee tokens are saved (gitignored, chmod 600)")
+    parser.add_argument("--state-file", type=Path, default=DEFAULT_STATE_FILE, help="where the organizer and attendee tokens are saved (gitignored, chmod 600)")
+    parser.add_argument("--new-conference", action="store_true", help="ignore any saved conference and create a new one")
     parser.add_argument("--timeout", type=float, default=60.0, help="per-request timeout in seconds")
     parser.add_argument("--dry-run", action="store_true", help="print payload shapes and exit without network access")
     args = parser.parse_args()
@@ -549,59 +560,87 @@ def main() -> int:
         dry_run()
         return 0
 
-    organizer_key = load_organizer_key()
     base_url = args.base_url
+    state = {} if args.new_conference else read_state(args.state_file)
+    conference_id = state.get("conference_id")
+    organizer_token = state.get("organizer_token")
 
-    print(f"Seeding {CONFERENCE_NAME} ({CONFERENCE_ID}) -> {base_url}")
+    if not (conference_id and organizer_token):
+        try:
+            created = post_json(base_url, "/conferences", {"name": CONFERENCE_NAME}, {}, args.timeout)
+        except ApiError as exc:
+            print(f"POST /conferences failed: {exc}", file=sys.stderr)
+            return 1
+        conference_id = created["conference_id"]
+        organizer_token = created["organizer_token"]
+        state = {"conference_id": conference_id, "organizer_token": organizer_token, "attendees": {}}
+        write_state(args.state_file, state)
+        print(f"Created conference {conference_id} ({CONFERENCE_NAME})")
+    else:
+        print(f"Reusing conference {conference_id} from {args.state_file}")
+
     try:
         schedule = post_json(
             base_url,
             "/confirm-schedule",
-            {"conference_id": CONFERENCE_ID, "talks": TALKS},
-            {"X-Organizer-Key": organizer_key},
+            {"conference_id": conference_id, "talks": TALKS},
+            {"X-Organizer-Token": organizer_token},
             args.timeout,
         )
     except ApiError as exc:
         print(f"confirm-schedule failed: {exc}", file=sys.stderr)
+        if exc.status in (401, 403):
+            print("Saved organizer token was rejected; re-run with --new-conference.", file=sys.stderr)
         return 1
-    print(f"Talks confirmed: {schedule.get('talk_count', len(TALKS))}  join_url={schedule.get('join_url', '?')}")
+    print(f"Talks confirmed: {schedule.get('talk_count', len(TALKS))}")
 
-    tokens = read_tokens(args.tokens_file)
+    attendee_tokens: dict[str, dict[str, str]] = state.setdefault("attendees", {})
     first_recommendations: dict[str, Any] | None = None
-    created = updated = 0
-    for payload in ATTENDEES:
-        name = payload["name"]
-        existing = tokens.get(name)
+    first_name = ""
+    created_n = updated_n = 0
+    for base_profile in ATTENDEES:
+        name = base_profile["name"]
+        profile = {"conference_id": conference_id, **base_profile}
+        existing = attendee_tokens.get(name)
         headers = {"Authorization": f"Bearer {existing['token']}"} if existing else {}
         try:
             try:
-                result = post_json(base_url, "/save-user-data", payload, headers, args.timeout)
+                result = post_profile_multipart(base_url, profile, headers, args.timeout)
             except ApiError as exc:
                 if existing and exc.status in (401, 403):
-                    # Token no longer valid (indices swapped); create a fresh attendee.
                     existing = None
-                    result = post_json(base_url, "/save-user-data", payload, {}, args.timeout)
+                    result = post_profile_multipart(base_url, profile, {}, args.timeout)
                 else:
                     raise
         except ApiError as exc:
             print(f"save-user-data failed for {name}: {exc}", file=sys.stderr)
+            write_state(args.state_file, state)
             return 1
         attendee_id = result.get("attendee_id", "?")
         if existing:
-            updated += 1
+            updated_n += 1
         else:
-            created += 1
-            token = result.get("attendee_token")
-            if token:
-                tokens[name] = {"attendee_id": attendee_id, "token": token}
-                write_tokens(args.tokens_file, tokens)
+            created_n += 1
+            if result.get("attendee_token"):
+                attendee_tokens[name] = {"attendee_id": attendee_id, "token": result["attendee_token"]}
         print(f"  {'updated' if existing else 'created'}  {attendee_id}  {name}")
         if first_recommendations is None:
             first_recommendations = result.get("recommendations", {})
             first_name = name
+    write_state(args.state_file, state)
 
-    write_tokens(args.tokens_file, tokens)
-    print(f"\nAttendees: {created} created, {updated} updated. Tokens saved to {args.tokens_file} (mode 600).")
+    try:
+        joined = get_json(base_url, f"/join/{conference_id}", args.timeout)
+        join_talks = len(joined.get("talks", []))
+    except ApiError as exc:
+        print(f"GET /join/{conference_id} failed: {exc}", file=sys.stderr)
+        join_talks = -1
+
+    print(f"\nConference: {conference_id}")
+    print(f"Join URL:   {PUBLIC_SITE}/join/{conference_id}")
+    print(f"Talks on join page: {join_talks}")
+    print(f"Attendees: {created_n} created, {updated_n} updated")
+    print(f"Tokens saved to {args.state_file} (mode 600, gitignored)")
     if first_recommendations is not None:
         print_smoke_check(first_name, first_recommendations)
     return 0

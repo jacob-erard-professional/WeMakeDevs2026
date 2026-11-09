@@ -38,7 +38,7 @@ spec:
             # until that lands it is inert.
             - name: CORS_ORIGINS
               value: http://localhost:8081,http://localhost:19006
-          # ES_URL, ES_API_KEY, OPENAI_API_KEY, ORGANIZER_API_KEY and OTEL_EXPORTER_OTLP_* come
+          # ES_URL, ES_API_KEY, OPENAI_API_KEY and OTEL_EXPORTER_OTLP_* come
           # from Secret app-env, created outside git by scripts/push-secrets.sh.
           envFrom:
             - secretRef:
