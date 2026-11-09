@@ -16,4 +16,4 @@ Per the hackathon rules, here is how we used AI coding assistants:
 - **Gitar** reviewed every pull request, and some of its suggested fixes were applied as commits (`Co-Authored-By: Gitar` trailer).
 - **In the product:** OpenAI models parse uploaded conference schedules (`backend/app/schedule_parser.py`). Recommendations use Elastic-hosted Jina embeddings for vector search, not a chat model.
 
-Every AI-generated change went through a pull request and was reviewed by a team member before merge.
+Every change landed through a pull request reviewed by Gitar; some small PRs were approved and merged by Gitar without a human review.
