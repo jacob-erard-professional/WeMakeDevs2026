@@ -36,6 +36,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile as FormUploadFile
 
 from app.schedule_parser import parse_schedule
+from app.schedule_recommendations import best_schedules
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("conference_api")
@@ -175,6 +176,8 @@ TALK_FIELDS = set(INDEX_BODIES["talks"]["mappings"]["properties"])
 ATTENDEE_FIELDS = set(INDEX_BODIES["attendees"]["mappings"]["properties"])
 SAFE_ATTENDEE_SOURCE = {"includes": ["attendee_id", "name", "headline"]}
 TALK_SOURCE = ["talk_id", "title", "room", "start_time", "end_time"]
+SCHEDULE_CANDIDATE_LIMIT = 100
+SCHEDULE_OPTION_COUNT = 3
 
 _indices_ready = False
 INDEX_RETRY_MAX_SECONDS = 60.0
@@ -445,7 +448,7 @@ def _hits_with_reason(hits: list[dict[str, Any]], highlight_field: str) -> list[
     return results
 
 
-async def recommended_talks(profile: dict[str, Any]) -> list[dict[str, Any]]:
+async def ranked_talks(profile: dict[str, Any], size: int = 20) -> list[dict[str, Any]]:
     """Semantic schedule search with time conflicts removed by Elasticsearch."""
     profile_query = " ".join(
         part for part in (profile.get("profile", ""), profile.get("looking_for", "")) if part
@@ -470,7 +473,7 @@ async def recommended_talks(profile: dict[str, Any]) -> list[dict[str, Any]]:
             "must_not": must_not,
         }
     }
-    search: dict[str, Any] = {"index": "talks", "query": query, "source": TALK_SOURCE, "size": 20}
+    search: dict[str, Any] = {"index": "talks", "query": query, "source": TALK_SOURCE, "size": size}
     if profile_query:
         query["bool"]["must"] = [
             {"semantic": {"field": "semantic_content", "query": profile_query}}
@@ -478,7 +481,27 @@ async def recommended_talks(profile: dict[str, Any]) -> list[dict[str, Any]]:
     else:
         search["sort"] = [{"start_time": {"order": "asc"}}]
     hits = await es_call("recommend_talks", lambda: es.search(**search)["hits"]["hits"])
-    return [hit["_source"] for hit in hits]
+    # A missing score only occurs for the no-profile chronological fallback.  Equal
+    # relevance then lets the schedule builder maximize how many talks fit.
+    return [hit["_source"] | {"relevance": float(hit.get("_score") or 1.0)} for hit in hits]
+
+
+async def recommended_talks(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    return await ranked_talks(profile)
+
+
+def build_recommended_schedules(talks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Use Elasticsearch relevance as the weights for k-best interval scheduling."""
+    with tracer.start_as_current_span("build_recommended_schedules") as span:
+        schedules = best_schedules(talks, count=SCHEDULE_OPTION_COUNT)
+        span.set_attribute("schedule.candidate_count", len(talks))
+        span.set_attribute("schedule.option_count", len(schedules))
+    return schedules
+
+
+async def recommended_schedules(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    talks = await ranked_talks(profile, size=SCHEDULE_CANDIDATE_LIMIT)
+    return build_recommended_schedules(talks)
 
 
 async def recommended_people(profile: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -737,7 +760,9 @@ async def save_user_data(
         "conference_id": payload.conference_id,
         "attendee_id": attendee_id,
     }
-    recommendations = await recommended_talks(recommendation_profile)
+    ranked = await ranked_talks(recommendation_profile, size=SCHEDULE_CANDIDATE_LIMIT)
+    recommendations = ranked[:20]
+    schedules = build_recommended_schedules(ranked)
     people = (
         await recommended_people(recommendation_profile)
         if payload.discovery_opt_in
@@ -745,7 +770,11 @@ async def save_user_data(
     )
     result: dict[str, Any] = {
         "attendee_id": attendee_id,
-        "recommendations": {"talks": recommendations, "attendees": people},
+        "recommendations": {
+            "talks": recommendations,
+            "schedules": schedules,
+            "attendees": people,
+        },
     }
     if token:
         result["attendee_token"] = f"{payload.conference_id}:{attendee_id}:{token}"
@@ -788,6 +817,17 @@ async def get_talk_recommendations(
 ) -> dict[str, Any]:
     profile = await claimed_profile(conference_id, profile_id, identity)
     return {"talks": await recommended_talks(profile)}
+
+
+@app.get("/conferences/{conference_id}/schedules")
+async def get_recommended_schedules(
+    conference_id: str,
+    profile_id: str | None = Query(default=None),
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    """Return the three best relevance-weighted, conflict-free schedule choices."""
+    profile = await claimed_profile(conference_id, profile_id, identity)
+    return {"schedules": await recommended_schedules(profile)}
 
 
 @app.get("/conferences/{conference_id}/people/recommend")
