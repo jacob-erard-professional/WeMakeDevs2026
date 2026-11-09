@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Conference Connections",
+    "name": "Click Talk",
     "slug": "conference-connections",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,7 +10,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Conference Connections to scan conference QR codes.",
+          "cameraPermission": "Allow Click Talk to scan conference QR codes.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
