@@ -42,12 +42,14 @@ the project's Manage/Kibana → API keys, or use the shared key passed around ou
 
 ### Seed demo data
 
-`python3 scripts/seed_demo.py` (stdlib only) seeds the `cnh-slc-2026` demo conference
-through the public API: 20 talks via `POST /confirm-schedule` and 10 fake attendees via
-`POST /save-user-data`. It reads `ORGANIZER_API_KEY` from the environment or `.env`, defaults
-to `--base-url https://wearedevs.cnh.radarhq.io/api`, and is safe to re-run (stable
-`talk_id`s overwrite; known attendees are updated in place). Attendee bearer tokens land in
-the gitignored `.demo-tokens.json` (mode 600) so you can log in as a demo attendee.
+`python3 scripts/seed_demo.py` (stdlib only) seeds a live demo conference through the public
+API: `POST /conferences` creates "Cloud Native Hackathon SLC 2026" and returns an organizer
+token, `POST /confirm-schedule` stores 20 talks, and `POST /save-user-data` creates 10 fake
+attendees (example.com emails, no resumes). It defaults to
+`--base-url https://wearedevs.cnh.radarhq.io/api`, prints only the conference id, the join URL
+and counts, and keeps the organizer and attendee tokens in the gitignored
+`scripts/.seed-organizer.json` (mode 600). Re-running reuses that conference (stable `talk_id`s
+overwrite; known attendees are updated in place); `--new-conference` starts another one.
 `--dry-run` prints the payloads without touching the network.
 
 ## You still need to do

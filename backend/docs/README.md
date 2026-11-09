@@ -30,7 +30,8 @@ The initial service lives in `backend/app/main.py` and runs with `uvicorn app.ma
 `backend` directory. Provisional defaults fill the draft's TBDs: attendee identity is
 conference-scoped and established by the first `/save-user-data` call, which returns a bearer
 token; later attendee calls send `Authorization: Bearer <conference>:<attendee>:<secret>`.
-Organizers send `X-Organizer-Key`, configured with `ORGANIZER_API_KEY`. `/save-user-data` accepts
+Organizers create a conference with `POST /conferences`, which returns a one-time-visible
+`organizer_token`; organizer calls send it as `X-Organizer-Token`. `/save-user-data` accepts
 JSON (including `resume_text`) or multipart form data with a JSON `profile` field and optional PDF,
 TXT, or DOCX `resume` file up to 10 MiB. `/upload-schedule` accepts one URL or PDF/PNG/JPEG/WEBP
 file up to 10 MiB. The parser client is an integration boundary until one is selected. Connections
@@ -45,7 +46,7 @@ python -m pip install -e .
 uvicorn app.main:app --reload
 ```
 
-Set `ES_URL`, `ES_API_KEY`, `ORGANIZER_API_KEY`, and `PUBLIC_BASE_URL` in the environment.
+Set `ES_URL`, `ES_API_KEY`, and `PUBLIC_BASE_URL` in the environment.
 
 ## Completion checklist
 
