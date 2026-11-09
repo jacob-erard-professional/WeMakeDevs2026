@@ -5,6 +5,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { formatTime, parseSchedule } from './conference';
 import type { Conference } from './conference';
 import { sampleSchedule } from './demoConference';
+import { Flow } from './Flow';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conference['talks']) => Conference }) {
@@ -15,9 +16,9 @@ export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conf
 
   if (published) {
     return (
-      <Section>
+      <Flow step="published" style={styles.section}>
         <Label>ATTENDEE ENTRY PASS</Label>
-        <Heading>{published.name}</Heading>
+        <Heading large>{published.name}</Heading>
         <View style={passStyles.pass}>
           <View accessible accessibilityRole="image" accessibilityLabel={`Conference QR code for ${published.code}`}>
             <QRCode value={published.code} size={132} quietZone={28} />
@@ -35,13 +36,13 @@ export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conf
           setName('');
           setSource('');
         }} secondary />
-      </Section>
+      </Flow>
     );
   }
 
   return (
-    <View style={styles.stack}>
-      <Heading>Create a conference</Heading>
+    <Flow step="schedule" style={styles.stack}>
+      <Heading large>Create a conference</Heading>
       <Copy>Paste a schedule and review the talks before publishing. This demo imports text for a single day in Mountain Time.</Copy>
       <Section>
         <Field label="Conference name" value={name} onChangeText={setName} maxLength={100} />
@@ -65,7 +66,7 @@ export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conf
             onPress={() => setPublished(onPublish(name.trim(), preview.talks))} />
         </Section>
       ) : null}
-    </View>
+    </Flow>
   );
 }
 

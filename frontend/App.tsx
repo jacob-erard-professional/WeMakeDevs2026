@@ -1,10 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ComponentRef } from 'react';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
+import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
 import { Organizer } from './src/Organizer';
 import { ProfileForm } from './src/ProfileForm';
@@ -25,30 +27,34 @@ function JoinConference({ conferences, onJoin }: {
     else setError('This code doesn’t match a conference in this session. Check the code or try the sample conference.');
   }
 
-  if (scanning) {
-    return <JoinScanner onClose={() => setScanning(false)} onScan={(value) => {
-      setScanning(false);
-      join(value);
-    }} />;
-  }
-
   return (
-    <Section>
-      <Label>ATTENDEE CHECK-IN</Label>
-      <Heading>Join your conference</Heading>
-      <Copy>Get your schedule and find people to meet.</Copy>
-      <Field label="Conference code" autoCapitalize="none" autoCorrect={false} value={code}
-        maxLength={100} onChangeText={(value) => { setCode(value); setError(''); }} onSubmitEditing={() => join(code)} />
-      {error ? <Message error>{error}</Message> : null}
-      <View style={styles.row}>
-        <Action title="Join conference" onPress={() => join(code)} />
-        {Platform.OS !== 'web' ? <Action title="Scan QR code" onPress={() => setScanning(true)} secondary /> : null}
-      </View>
-      <View style={layout.sample}>
-        <Copy>Just looking around?</Copy>
-        <Action title="Join sample conference" onPress={() => onJoin(demoConference)} secondary />
-      </View>
-    </Section>
+    <Flow step={scanning ? 'scanner' : 'code'} style={scanning ? undefined : layout.entry}>
+      {scanning ? <JoinScanner onClose={() => setScanning(false)} onScan={(value) => {
+        setScanning(false);
+        join(value);
+      }} /> : (
+        <>
+          <View style={layout.intro}>
+            <Label>Attendee check-in</Label>
+            <Text accessibilityRole="header" style={layout.coverTitle}>Find your people.</Text>
+            <Copy>Make time for the talks you care about and the people you want to meet.</Copy>
+          </View>
+          <View style={layout.checkIn}>
+            <Section>
+              <Heading>Join your conference</Heading>
+              <Field label="Conference code" autoCapitalize="none" autoCorrect={false} value={code}
+                maxLength={100} onChangeText={(value) => { setCode(value); setError(''); }} onSubmitEditing={() => join(code)} />
+              {error ? <Message error>{error}</Message> : null}
+              <View style={styles.row}>
+                <Action title="Join conference" onPress={() => join(code)} />
+                {Platform.OS !== 'web' ? <Action title="Scan QR code" onPress={() => setScanning(true)} secondary /> : null}
+              </View>
+              <Action title="Join sample conference" onPress={() => onJoin(demoConference)} secondary />
+            </Section>
+          </View>
+        </>
+      )}
+    </Flow>
   );
 }
 
@@ -59,11 +65,13 @@ export default function App() {
   const [profile, setProfile] = useState<Attendee>();
   const [editing, setEditing] = useState(false);
   const [requested, setRequested] = useState<string[]>([]);
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
 
   function publish(name: string, talks: Conference['talks']) {
     const code = `event-${conferences.length}`;
     const event = { name, talks, code };
     setConferences((items) => [...items, event]);
+    scrollToTop();
     return event;
   }
 
@@ -77,42 +85,46 @@ export default function App() {
   const screen = mode === 'organizer' ? 'organizer'
     : !conference ? 'join' : !profile || editing ? 'profile' : 'plan';
 
+  function scrollToTop() {
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  useEffect(scrollToTop, [screen]);
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={layout.screen}>
         <StatusBar style="dark" />
-        <ScrollView key={screen} keyboardShouldPersistTaps="handled" contentContainerStyle={layout.content}>
+        <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={layout.content}>
           <View style={layout.masthead}>
-            <View style={layout.issue}>
-              <Label>FIELD GUIDE</Label>
-              <Label>DEMO SESSION</Label>
+            <Text style={layout.title}>Conference Connections</Text>
+            <View style={styles.row}>
+              <Action title="Attendee" selected={mode === 'attendee'} onPress={() => setMode('attendee')} secondary />
+              <Action title="Organizer" selected={mode === 'organizer'} onPress={() => setMode('organizer')} secondary />
             </View>
-            <Text accessibilityRole="header" style={[layout.title, screen === 'join' && layout.coverTitle]}>
-              Conference Connections
-            </Text>
-            {screen === 'join' ? <Copy>A plan for your day. A reason to say hello.</Copy> : null}
           </View>
-          <View style={styles.row}>
-            <Action title="Attendee" selected={mode === 'attendee'} onPress={() => setMode('attendee')} secondary />
-            <Action title="Organizer" selected={mode === 'organizer'} onPress={() => setMode('organizer')} secondary />
-          </View>
-          {mode === 'organizer' ? <Organizer onPublish={publish} /> : !conference ? (
-            <JoinConference conferences={conferences} onJoin={changeConference} />
-          ) : (
-            <View style={styles.stack}>
-              <View style={styles.row}>
-                <Label>{conference.name}</Label>
-                <Action title="Switch conference" onPress={() => changeConference()} secondary />
-              </View>
-              {!profile || editing ? (
-                <ProfileForm initial={profile} onSave={(next) => { setProfile(next); setEditing(false); }} />
+          <MotionPreferences>
+            <Flow step={screen}>
+              {mode === 'organizer' ? <Organizer onPublish={publish} /> : !conference ? (
+                <JoinConference conferences={conferences} onJoin={changeConference} />
               ) : (
-                <Recommendations conference={conference} profile={profile} requested={requested}
-                  onEdit={() => setEditing(true)}
-                  onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
+                <View style={styles.stack}>
+                  <View style={styles.row}>
+                    <Label>{conference.name}</Label>
+                    <Action title="Switch conference" onPress={() => changeConference()} secondary />
+                  </View>
+                  {!profile || editing ? (
+                    <ProfileForm initial={profile} onStepChange={scrollToTop} onSave={(next) => { setProfile(next); setEditing(false); }} />
+                  ) : (
+                    <Recommendations conference={conference} profile={profile} requested={requested}
+                      onEdit={() => setEditing(true)}
+                      onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
+                  )}
+                </View>
               )}
-            </View>
-          )}
+            </Flow>
+          </MotionPreferences>
+          <Text style={layout.footer}>Demo session</Text>
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
@@ -121,10 +133,12 @@ export default function App() {
 
 const layout = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  content: { width: '100%', maxWidth: 820, alignSelf: 'center', padding: 22, paddingBottom: 48, gap: 24 },
-  masthead: { gap: 10, paddingTop: 12, borderTopWidth: 5, borderTopColor: colors.accent },
-  issue: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 6 },
-  title: { color: colors.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 28, fontWeight: '700' },
-  coverTitle: { fontSize: 44, maxWidth: 550 },
-  sample: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginTop: 14 },
+  content: { width: '100%', maxWidth: 920, alignSelf: 'center', padding: 24, paddingBottom: 48, gap: 34 },
+  masthead: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', columnGap: 24 },
+  title: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: -0.5 },
+  entry: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', columnGap: 64, rowGap: 32 },
+  intro: { flexBasis: 360, flexGrow: 1, flexShrink: 1, maxWidth: 440, gap: 12 },
+  coverTitle: { color: colors.ink, fontSize: 58, fontWeight: '700', letterSpacing: -3.5 },
+  checkIn: { flexBasis: 270, flexGrow: 1, flexShrink: 1, maxWidth: 380 },
+  footer: { color: colors.muted, fontSize: 13 },
 });
