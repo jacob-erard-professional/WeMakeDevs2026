@@ -222,4 +222,5 @@ __marimo__/
 # Hackathon local state
 .env
 .radar.log
+.backend-*.pid
 elastic-start-local/

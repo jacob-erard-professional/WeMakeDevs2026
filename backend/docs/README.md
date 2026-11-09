@@ -24,6 +24,29 @@ All conference data and attendee interactions are scoped to one conference. The 
 
 See [`elasticsearch.md`](elasticsearch.md) for candidate indices, mapping and document templates, and query/read/write behavior. These are planning prompts, not a finalized schema or query plan.
 
+## Implemented API defaults
+
+The initial service lives in `backend/app/main.py` and runs with `uvicorn app.main:app` from the
+`backend` directory. Provisional defaults fill the draft's TBDs: attendee identity is
+conference-scoped and established by the first `/save-user-data` call, which returns a bearer
+token; later attendee calls send `Authorization: Bearer <conference>:<attendee>:<secret>`.
+Organizers send `X-Organizer-Key`, configured with `ORGANIZER_API_KEY`. `/save-user-data` accepts
+JSON (including `resume_text`) or multipart form data with a JSON `profile` field and optional PDF,
+TXT, or DOCX `resume` file up to 10 MiB. `/upload-schedule` accepts one URL or PDF/PNG/JPEG/WEBP
+file up to 10 MiB. The parser client is an integration boundary until one is selected. Connections
+require explicit sharing flags on acceptance. Elasticsearch indices are `attendees`, `connections`,
+and `talks`; mappings are dynamically created. Review these defaults before production use.
+
+Start locally:
+
+```sh
+cd backend
+python -m pip install -e .
+uvicorn app.main:app --reload
+```
+
+Set `ES_URL`, `ES_API_KEY`, `ORGANIZER_API_KEY`, and `PUBLIC_BASE_URL` in the environment.
+
 ## Completion checklist
 
 - [ ] Confirm route names, HTTP methods, authentication/authorization approach, and versioning.

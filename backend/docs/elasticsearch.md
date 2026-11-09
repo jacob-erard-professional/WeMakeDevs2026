@@ -119,3 +119,23 @@ For each query, document the index/alias, required conference filter, request sh
 - Add spans and useful metrics around Elasticsearch operations; avoid sensitive user content in span attributes.
 - Define behavior for Elasticsearch unavailable, mapping conflict, timeout, partial results, and index migration: **TBD**.
 - Define deletion and retention behavior for attendee data and unconfirmed schedule drafts: **TBD**.
+
+## Current vectorization extension template
+
+The API currently uses keyword/filter-based Elasticsearch reads. It does not generate embeddings or
+issue vector queries. This is the planned seam for later work:
+
+```python
+class RecommendationProvider:
+    def recommend_talks(self, *, conference_id: str, attendee_profile: dict) -> list[dict]:
+        # TODO: embed approved interests and issue a conference-filtered kNN or hybrid query.
+        raise NotImplementedError
+
+    def recommend_attendees(self, *, conference_id: str, attendee_profile: dict) -> list[dict]:
+        # TODO: include opted-in profiles only; exclude contact data and private availability.
+        raise NotImplementedError
+```
+
+Choose the model, dimensions, mapping, update strategy, ranking, and opt-out deletion behavior
+before enabling this provider. Keep vectorization behind this interface so it does not change the
+HTTP contract.
