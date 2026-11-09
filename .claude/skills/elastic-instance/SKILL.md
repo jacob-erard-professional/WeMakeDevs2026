@@ -49,8 +49,8 @@ values contain spaces. So:
   of the Dash0 token into your transcript.
 - Read one key at a time into a variable and never echo it:
   ```sh
-  ES_URL="$(grep -m1 '^ES_URL=' .env | cut -d= -f2-)"
-  ES_API_KEY="$(grep -m1 '^ES_API_KEY=' .env | cut -d= -f2-)"
+  ES_URL="$(grep -m1 '^ES_URL=' .env | cut -d= -f2- | tr -d "\"'")"
+  ES_API_KEY="$(grep -m1 '^ES_API_KEY=' .env | cut -d= -f2- | tr -d "\"'")"
   ```
 - Never put the key in a commit, a log line, a span attribute, `.mcp.json` (committed) or chat.
   `claude mcp add --header "Authorization: ApiKey ..."` stores it in your user config, which is fine.
