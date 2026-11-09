@@ -1,6 +1,8 @@
 # Conference frontend
 
-Standalone React Native and TypeScript app based on Expo's blank TypeScript template. The starter displays a sample conference with talk and people recommendations and their reasons. It runs with synthetic data and needs no backend or credentials.
+Standalone React Native and TypeScript app for conference planning and attendee discovery. Demo data and edits stay in the running session.
+
+Choose **Join sample conference** to try a profile, schedule, talk suggestions, and people recommendations. Refresh the People view to simulate another attendee arriving. Choose **Organizer** to preview and publish a pasted schedule, then enter its join code in the attendee flow.
 
 From the repository root in Command Prompt, using Node.js 24 and npm:
 
