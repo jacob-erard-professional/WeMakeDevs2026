@@ -27,8 +27,9 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: conference-api
             # The frontend's nginx serves the API under /api and strips the prefix;
-            # FastAPI needs it to build /api/docs and openapi.json links.
-            - name: ROOT_PATH
+            # uvicorn reads UVICORN_ROOT_PATH (= --root-path) so FastAPI builds /api/docs and
+            # openapi.json links with the prefix.
+            - name: UVICORN_ROOT_PATH
               value: /api
           # ES_URL, ES_API_KEY, OPENAI_API_KEY, ORGANIZER_API_KEY and OTEL_EXPORTER_OTLP_* come
           # from Secret app-env, created outside git by scripts/push-secrets.sh.
