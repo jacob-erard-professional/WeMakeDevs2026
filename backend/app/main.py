@@ -1126,6 +1126,105 @@ async def related_archive_talks(
     return {"talks": [hit["_source"] for hit in hits]}
 
 
+ARCHIVE_PAGE_SIZE = 20
+# RRF can only page inside its rank window, so a text search shows at most this many results.
+ARCHIVE_RANK_WINDOW = 100
+ARCHIVE_SOURCE_FIELDS = [
+    "id", "title", "abstract", "speakers", "tracks", "conference", "year", "source", "start",
+    "url", "video_url",
+]  # fmt: skip
+ARCHIVE_FACETS = {
+    "tracks": {"terms": {"field": "tracks", "size": 12}},
+    "sources": {"terms": {"field": "source"}},
+    "years": {"terms": {"field": "year", "size": 30, "order": {"_key": "desc"}}},
+}
+
+
+def archive_search_body(
+    q: str, track: str | None, source: str | None, year: int | None, page: int
+) -> dict[str, Any]:
+    """Hybrid BM25 + semantic (RRF) when there is text; newest-first browse otherwise."""
+    filters: list[dict[str, Any]] = []
+    if track:
+        filters.append({"term": {"tracks": track}})
+    if source:
+        filters.append({"term": {"source": source}})
+    if year:
+        filters.append({"term": {"year": year}})
+    body: dict[str, Any] = {
+        "from": (page - 1) * ARCHIVE_PAGE_SIZE,
+        "size": ARCHIVE_PAGE_SIZE,
+        "_source": ARCHIVE_SOURCE_FIELDS,
+        "aggs": ARCHIVE_FACETS,
+        "track_total_hits": True,
+    }
+    if not q:
+        body["query"] = {"bool": {"filter": filters}}
+        body["sort"] = [{"year": "desc"}, {"start": {"order": "desc", "missing": "_last"}}]
+        return body
+    keyword = {
+        "multi_match": {
+            "query": q,
+            "fields": ["title^3", "abstract", "speakers_text", "conference"],
+        }
+    }
+    semantic = {"semantic": {"field": "semantic_content", "query": q}}
+    body["retriever"] = {
+        "rrf": {
+            "rank_window_size": ARCHIVE_RANK_WINDOW,
+            "retrievers": [
+                {"standard": {"query": {"bool": {"must": [keyword], "filter": filters}}}},
+                {"standard": {"query": {"bool": {"must": [semantic], "filter": filters}}}},
+            ],
+        }
+    }
+    return body
+
+
+@app.get("/talks/search")
+async def search_archive_talks(
+    q: str = Query(default="", max_length=200),
+    track: str | None = Query(default=None, max_length=100),
+    source: str | None = Query(default=None, pattern="^(kubecon|pyvideo)$"),
+    year: int | None = Query(default=None, ge=1990, le=2100),
+    page: int = Query(default=1, ge=1, le=500),
+) -> dict[str, Any]:
+    """Public search over the read-only past-talk archive (~25k KubeCon and PyVideo talks)."""
+    q = q.strip()
+    if q and page * ARCHIVE_PAGE_SIZE > ARCHIVE_RANK_WINDOW:
+        raise HTTPException(422, f"Text searches return at most {ARCHIVE_RANK_WINDOW} results")
+    body = archive_search_body(q, track, source, year, page)
+    result = await es_call(
+        "search_archive_talks",
+        # Stay well inside the gateway's 15 s limit; semantic search usually answers in < 1 s.
+        lambda: es.options(request_timeout=8).search(index="talks-archive", **body),
+        **{
+            "db.elasticsearch.index": "talks-archive",
+            "search.mode": "hybrid" if q else "browse",
+            "search.page": page,
+            "search.filtered": bool(track or source or year),
+        },
+    )
+    total = result["hits"]["total"]["value"]
+    reachable = min(total, ARCHIVE_RANK_WINDOW) if q else total
+    talks = [hit["_source"] for hit in result["hits"]["hits"]]
+    trace.get_current_span().set_attribute("search.results", len(talks))
+    aggs = result.get("aggregations", {})
+    return {
+        "total": total,
+        "page": page,
+        "has_more": page * ARCHIVE_PAGE_SIZE < reachable,
+        "talks": talks,
+        "facets": {
+            name: [
+                {"value": b["key"], "count": b["doc_count"]}
+                for b in aggs.get(name, {}).get("buckets", [])
+            ]
+            for name in ARCHIVE_FACETS
+        },
+    }
+
+
 @app.post("/request-connection", status_code=201)
 async def request_connection(
     payload: ConnectionRequest, identity: tuple[str, str] | None = Depends(attendee_claim)

@@ -1,5 +1,6 @@
-// Synthetic sample data for the public Past events / Past talks pages. There is no list endpoint
-// yet; the pages read through loadPastEvents() so the API can replace this module later.
+// Synthetic sample data for the public Past events page. There is no event-list endpoint yet;
+// the page reads through loadPastEvents() so the API can replace this module later.
+// (Search Talks uses the real archive through GET /talks/search.)
 // Everything here is invented: no real people, contact details, or résumés.
 
 export type PastTalk = {
@@ -78,12 +79,4 @@ export const sampleDataNotice = 'Sample data: these events and talks are synthet
 
 export async function loadPastEvents(): Promise<PastEvent[]> {
   return events;
-}
-
-export async function loadPastTalks(): Promise<PastTalk[]> {
-  return events.flatMap((event) => event.talks);
-}
-
-export function eventName(eventId: string): string {
-  return events.find((event) => event.id === eventId)?.name ?? eventId;
 }
