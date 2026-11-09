@@ -76,7 +76,13 @@ export async function joinLiveConference(id: string, signal?: AbortSignal): Prom
   if (!response.ok) {
     throw new Error(response.status === 404 ? 'That conference is not available yet.' : 'Could not reach the conference server.');
   }
-  return conferenceFromSchedule(await response.json() as JoinResponse);
+  // A proxy or SPA fallback can answer 200 with HTML; surface that as a server problem rather
+  // than leaking the JSON parser's "Unexpected token" message.
+  const data = await response.json().catch(() => null) as JoinResponse | null;
+  if (!data || typeof data.conference_id !== 'string' || !Array.isArray(data.talks)) {
+    throw new Error('Could not reach the conference server.');
+  }
+  return conferenceFromSchedule(data);
 }
 
 export function conferenceFromSchedule(data: JoinResponse): Conference {
@@ -144,17 +150,18 @@ export async function saveLiveProfile(
   });
   if (!response.ok) throw await apiError(response, 'Could not save your profile to the conference server.');
   const result = await response.json() as Partial<SaveProfileResult> & { attendee_id: string };
+  return { ...result, recommendations: normalizeRecommendations(result.recommendations) } satisfies SaveProfileResult;
+}
+
+// Fills in any list the server (or a stored copy from an older build) left out.
+export function normalizeRecommendations(value: unknown): LiveRecommendations {
+  const partial = (typeof value === 'object' && value !== null ? value : {}) as Partial<LiveRecommendations>;
+  const list = <T,>(items: T[] | undefined) => (Array.isArray(items) ? items : []);
   return {
-    ...result,
-    recommendations: {
-      talks: result.recommendations?.talks ?? [],
-      schedules: result.recommendations?.schedules ?? [],
-      attendees: {
-        similar: result.recommendations?.attendees?.similar ?? [],
-        matches: result.recommendations?.attendees?.matches ?? [],
-      },
-    },
-  } satisfies SaveProfileResult;
+    talks: list(partial.talks),
+    schedules: list(partial.schedules),
+    attendees: { similar: list(partial.attendees?.similar), matches: list(partial.attendees?.matches) },
+  };
 }
 
 async function apiError(response: Response, fallback: string) {
