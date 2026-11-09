@@ -60,3 +60,25 @@ Set `ES_URL`, `ES_API_KEY`, and `PUBLIC_BASE_URL` in the environment.
 - [ ] Add tracing/logging/metrics expectations for each endpoint, Elasticsearch operation, and parser/LLM call.
 - [ ] Review accessibility and privacy implications for any user-facing behavior.
 - [ ] Keep API documentation aligned with the implementation and frontend contract.
+
+## Résumé parsing
+
+`app/resume_parser.py` turns an uploaded résumé (PDF, DOCX incl. table cells, TXT; 10 MiB cap,
+text capped at 50,000 chars) into plain text and then into profile fields: `headline`, `skills`
+(lowercase, ≤30), `interests` (≤15), `working_on`, `can_help_with` and a `summary`. The structured
+parse uses OpenAI structured outputs (`OPENAI_RESUME_MODEL`, default `gpt-5.4-mini`, strict JSON
+schema, 30 s timeout) and is instructed to never emit contact details; emails, phone numbers and
+URLs are also stripped in code. Without `OPENAI_API_KEY`, or if the call fails, the result is an
+empty profile and the save still succeeds with the raw text (only the exception type is logged).
+
+LinkedIn is supported through the profile's **More → Save to PDF** export, which is detected by
+its section headers (`Contact`, `Top Skills`, `Experience`, ...) plus a `linkedin.com/in/` link and
+parsed deterministically for Top Skills, headline and current role before the model fills the rest.
+LinkedIn pages are never fetched (ToS, auth wall); `linkedin_url` is stored as a link only.
+
+In `/save-user-data` the parsed fields only fill fields the attendee left empty (skills and
+interests are unioned), feed the `profile` embedding, and come back in the response as
+`resume_profile` so the form can show "We picked up: ..." for editing. `POST /parse-resume`
+(multipart `resume`) returns `{resume_profile, is_linkedin_pdf}` without storing anything, for
+prefilling the form. The `parse_resume` span records counts only, never résumé content, and
+`resume_text` is still only disclosed through `/accept-connection`.
