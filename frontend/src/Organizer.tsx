@@ -13,7 +13,8 @@ import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
 import { parsePastedSchedule, validScheduleDate } from './scheduleText';
 import { organizerSession } from './session';
-import { Action, Copy, Field, Heading, Label, Message, Section, TalkDetails, styles } from './ui';
+import { OrganizerIntro } from './site/OrganizersPage';
+import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 const sources = ['Schedule link', 'Image or PDF', 'Paste text'] as const;
 type Source = typeof sources[number];
@@ -165,6 +166,13 @@ export function Organizer({ onPublishSample, onTrySample }: {
     }, 'Could not publish the schedule.');
   }
 
+  // Return to the review screen for this conference; the session and its sessions stay put.
+  function backToDashboard() {
+    setPublishedCode(undefined);
+    setError('');
+    if (session && !('sample' in session)) persist(session, { published: false });
+  }
+
   // Also "Start a new conference": forgets this browser's organizer session.
   function reset() {
     organizerSession.clear();
@@ -199,7 +207,8 @@ export function Organizer({ onPublishSample, onTrySample }: {
     return (
       <Flow step="published">
         <EntryPass name={session.name} code={publishedCode} link={joinUrl(publishedCode)}
-          details={[date, venue, description].filter(Boolean).join(' · ')} onReset={reset}
+          details={[date, venue].filter(Boolean).join(' · ')} onReset={reset}
+          onBack={backToDashboard}
           onTrySample={'sample' in session ? () => onTrySample(publishedCode) : undefined} />
       </Flow>
     );
@@ -211,6 +220,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
 
   return (
     <Flow step={session ? 'schedule' : 'details'} style={styles.stack}>
+      <OrganizerIntro />
       <Label>{session ? 'Step 2 of 2 · Schedule' : 'Step 1 of 2 · Event details'}</Label>
       <Heading large>{session ? 'Add your sessions' : 'Create a conference'}</Heading>
       {sampleMode ? <Message>Sample mode. This conference stays in this app session.</Message> : null}
