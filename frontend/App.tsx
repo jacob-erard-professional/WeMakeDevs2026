@@ -5,14 +5,9 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
+import { talkDay } from './src/conference';
 import { demoConference } from './src/demoConference';
-import {
-  conferenceFromSchedule,
-  joinLiveConference,
-  normalizeRecommendations,
-  refreshPeopleRecommendations,
-  saveLiveProfile,
-} from './src/api';
+import { conferenceFromSchedule, joinLiveConference, normalizeRecommendations, saveLiveProfile } from './src/api';
 import type { LiveRecommendations } from './src/api';
 import type { ParsedTalk } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
@@ -23,9 +18,11 @@ import { Organizer } from './src/Organizer';
 import { ProfileForm } from './src/ProfileForm';
 import type { PreviousResume } from './src/ProfileForm';
 import { Recommendations } from './src/Recommendations';
+import type { RecommendationSection } from './src/Recommendations';
 import { ScheduleBrowser } from './src/ScheduleBrowser';
 import { attendeeSessions, fromStoredProfile, toStoredProfile } from './src/session';
 import { Landing } from './src/site/Landing';
+import { MyConferences } from './src/site/MyConferences';
 import { OrganizersPage } from './src/site/OrganizersPage';
 import { PastEvents } from './src/site/PastEvents';
 import { PastTalks } from './src/site/PastTalks';
@@ -105,25 +102,31 @@ function JoinConference({ conferences, linkCode, onJoin }: {
   );
 }
 
+function savedSection(value?: string): RecommendationSection {
+  if (value === 'Event schedule' || value === 'Talks' || value === 'Suggested People') return value;
+  return 'My schedule';
+}
+
 export default function App() {
   const [conferences, setConferences] = useState([demoConference]);
   const nextSample = useRef(1);
   const { page, path, navigate } = useRoute();
   const [conference, setConference] = useState<Conference>();
-  // `profile` is the last saved profile; `draft` carries unsaved edits across remounts and
-  // reloads (autosaved to this browser's storage, debounced).
+  // Saved profile and draft are scoped to the conference in the current route.
   const [profile, setProfile] = useState<Attendee>();
   const [draft, setDraft] = useState<Attendee>();
   const [previousResume, setPreviousResume] = useState<PreviousResume>();
   const [requested, setRequested] = useState<string[]>([]);
+  const [section, setSection] = useState<RecommendationSection>('My schedule');
+  const [remembered, setRemembered] = useState(attendeeSessions.list);
   const [attendeeId, setAttendeeId] = useState<string>();
   const [attendeeToken, setAttendeeToken] = useState<string>();
   const [recommendations, setRecommendations] = useState<LiveRecommendations>();
-  const [browsingSchedule, setBrowsingSchedule] = useState(false);
   const [resumeTalk, setResumeTalk] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-  const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const recommendationScope = useRef(0);
+  const savingProfiles = useRef(new Set<string>());
+  const currentPath = useRef(path);
+  currentPath.current = path;
   // The attendee step lives in the path (/join/<code>[/availability|/plan]) so a reload
   // restores it and browser Back returns to the previous step.
   const route = page === 'join' ? parseJoinPath(path) : null;
@@ -134,55 +137,57 @@ export default function App() {
   const activeConference = linkCode && conference?.code === linkCode ? conference : undefined;
   const scope = useRef<Conference | undefined>(undefined);
 
-  function changeConference(next?: Conference) {
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    recommendationScope.current += 1;
+  function changeConference(next: Conference) {
     scope.current = next;
     setConference(next);
     setRequested([]);
     setResumeTalk(undefined);
-    // Restore whatever this browser remembers for the conference, including the server's
-    // last recommendations so a reload on /plan shows them without another save.
-    const stored = next ? attendeeSessions.load(next.code) : undefined;
-    const saved = stored?.saved ? fromStoredProfile(stored.saved) : undefined;
-    const unsaved = stored?.draft ? fromStoredProfile(stored.draft) : undefined;
+    const stored = attendeeSessions.load(next.code);
+    const firstDay = next.talks.flatMap((talk) => talkDay(talk.startsAt) ?? []).sort()[0];
+    function restore(storedProfile: Parameters<typeof fromStoredProfile>[0]) {
+      const result = fromStoredProfile(storedProfile);
+      // Older availability drafts did not capture the day. Assign them to the first event day.
+      if (firstDay) {
+        result.profile.unavailable = result.profile.unavailable.map((range) => ({ ...range, date: range.date ?? firstDay }));
+      }
+      return result;
+    }
+    const saved = stored?.saved ? restore(stored.saved) : undefined;
+    const unsaved = stored?.draft ? restore(stored.draft) : undefined;
     const resumeName = unsaved?.resumeName ?? saved?.resumeName;
     setAttendeeId(stored?.attendeeId);
     setAttendeeToken(stored?.attendeeToken);
     setRecommendations(saved && stored?.recommendations ? normalizeRecommendations(stored.recommendations) : undefined);
     setProfile(saved?.profile);
     setDraft(unsaved?.profile ?? saved?.profile);
-    setPreviousResume(resumeName ? { name: resumeName, onServer: !unsaved && !!saved?.resumeName } : undefined);
-    return { code: next?.code, returning: !!saved && !unsaved };
+    setPreviousResume(resumeName ? { name: resumeName, onServer: resumeName === saved?.resumeName && !next.sample } : undefined);
+    setSection(savedSection(stored?.section));
+    attendeeSessions.update(next.code, { conferenceName: next.name, sample: !!next.sample, lastOpenedAt: Date.now() });
+    setRemembered(attendeeSessions.list());
+    return { returning: !!saved && !unsaved };
   }
 
   function changeDraft(next: Attendee) {
     const code = activeConference?.code;
-    if (!code) return;
+    if (!code || scope.current?.code !== code) return;
     setDraft(next);
     if (next.resume) setPreviousResume(undefined);
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    draftTimer.current = setTimeout(() => {
-      attendeeSessions.update(code, { draft: toStoredProfile(next, previousResume?.name) });
-    }, 400);
+    attendeeSessions.update(code, {
+      draft: toStoredProfile(next, previousResume?.name),
+      draftStep: step === 'availability' ? 'availability' : 'about',
+    });
   }
 
-  // "Start over / not you?": forget this browser's session for the conference.
-  function startOver() {
-    if (!activeConference) return;
-    if (draftTimer.current) clearTimeout(draftTimer.current);
-    recommendationScope.current += 1;
-    attendeeSessions.clear(activeConference.code);
-    setAttendeeId(undefined);
-    setAttendeeToken(undefined);
-    setRecommendations(undefined);
-    setProfile(undefined);
-    setDraft(undefined);
-    setPreviousResume(undefined);
-    setRequested([]);
-    setResumeTalk(undefined);
-    setBrowsingSchedule(false);
-    navigate(joinPath(activeConference.code), { replace: true });
+  function forgetConference(code: string) {
+    if (savingProfiles.current.has(code)) return false;
+    attendeeSessions.clear(code);
+    if (conference?.code === code) {
+      scope.current = undefined;
+      setConference(undefined);
+      setAttendeeId(undefined);
+    }
+    setRemembered(attendeeSessions.list());
+    return true;
   }
 
   function publishSample(name: string, talks: ParsedTalk[]) {
@@ -198,7 +203,7 @@ export default function App() {
 
   // Public site pages come from the URL; /join and /join/<code> show the attendee flow.
   const screen = page !== 'join' ? page
-    : !activeConference ? 'join' : browsingSchedule ? 'schedule' : step === 'plan' && profile ? 'plan' : 'profile';
+    : !activeConference ? 'join' : step === 'schedule' ? 'schedule' : step === 'plan' && profile ? 'plan' : 'profile';
 
   function scrollToTop() {
     scroll.current?.scrollTo({ y: 0, animated: false });
@@ -206,61 +211,73 @@ export default function App() {
 
   async function saveProfile(next: Attendee) {
     if (!activeConference) return;
-    recommendationScope.current += 1;
+    const { code } = activeConference;
+    if (savingProfiles.current.has(code)) throw new Error('Your profile is already being saved.');
+    savingProfiles.current.add(code);
     let token = attendeeToken;
     let id = attendeeId;
     let live: LiveRecommendations | undefined;
-    if (!activeConference.sample) {
-      // The bearer token makes this an update of the same attendee rather than a duplicate.
-      const result = await saveLiveProfile(activeConference, next, attendeeToken);
-      if (scope.current !== activeConference) return;
-      if (result.attendee_token) token = result.attendee_token;
-      id = result.attendee_id;
-      live = result.recommendations;
+    try {
+      if (!activeConference.sample) {
+        const result = await saveLiveProfile(activeConference, next, attendeeToken);
+        token = result.attendee_token ?? token;
+        id = result.attendee_id;
+        live = result.recommendations;
+      }
+    } finally {
+      savingProfiles.current.delete(code);
     }
-    if (draftTimer.current) clearTimeout(draftTimer.current);
     const resumeName = next.resume?.name ?? previousResume?.name;
-    attendeeSessions.update(activeConference.code, {
-      attendeeId: id, attendeeToken: token, saved: toStoredProfile(next, previousResume?.name), draft: undefined, recommendations: live,
+    attendeeSessions.update(code, {
+      attendeeId: id, attendeeToken: token, saved: toStoredProfile(next, previousResume?.name),
+      draft: undefined, draftStep: undefined, recommendations: live,
     });
+    setRemembered(attendeeSessions.list());
+    if (scope.current?.code !== code) return;
+    const saved = { ...next, resume: undefined };
     setRecommendations(live);
     setAttendeeId(id);
     setAttendeeToken(token);
-    setProfile(next);
-    setDraft(next);
-    setPreviousResume(resumeName ? { name: resumeName, onServer: true } : undefined);
-    if (resumeTalk) setBrowsingSchedule(true);
-    else navigate(joinPath(activeConference.code, 'plan'));
+    setProfile(saved);
+    setDraft(saved);
+    setPreviousResume(resumeName ? { name: resumeName, onServer: !activeConference.sample } : undefined);
+    if (currentPath.current === path) navigate(joinPath(code, resumeTalk ? 'schedule' : 'plan'));
   }
 
-  async function refreshPeople() {
-    if (!activeConference || activeConference.sample || !attendeeId || !attendeeToken) {
-      throw new Error('Save your profile before refreshing people.');
-    }
-    const conferenceScope = activeConference;
-    const token = attendeeToken;
-    const refreshScope = recommendationScope.current;
-    const attendees = await refreshPeopleRecommendations(conferenceScope.code, attendeeId, token);
-    // A response for a previous conference or attendee session must never overwrite the current UI.
-    if (
-      scope.current !== conferenceScope
-      || attendeeToken !== token
-      || recommendationScope.current !== refreshScope
-    ) return;
-    setRecommendations((current) => {
-      const next = { ...normalizeRecommendations(current), attendees };
-      attendeeSessions.update(conferenceScope.code, { recommendations: next });
-      return next;
-    });
+  // Refreshed people replace the stored copy so a reload keeps showing them.
+  function keepPeople(attendees: LiveRecommendations['attendees']) {
+    if (!activeConference) return;
+    const next = { ...normalizeRecommendations(recommendations), attendees };
+    setRecommendations(next);
+    attendeeSessions.update(activeConference.code, { recommendations: next });
+  }
+
+  function cancelDraft() {
+    if (!activeConference || !profile) return;
+    const stored = attendeeSessions.load(activeConference.code);
+    attendeeSessions.update(activeConference.code, { draft: undefined, draftStep: undefined });
+    setDraft(profile);
+    const name = stored?.saved?.resumeName;
+    setPreviousResume(name ? { name, onServer: !activeConference.sample } : undefined);
+    setResumeTalk(undefined);
+    setRemembered(attendeeSessions.list());
+    navigate(joinPath(activeConference.code, 'plan'), { replace: true });
   }
 
   function editProfile(talkId?: string) {
     setResumeTalk(talkId);
-    setBrowsingSchedule(false);
     if (activeConference && step !== 'about') navigate(joinPath(activeConference.code));
   }
 
   useEffect(scrollToTop, [screen, step]);
+  useEffect(() => {
+    if (page === 'myConferences') setRemembered(attendeeSessions.list());
+  }, [page]);
+  useEffect(() => {
+    if (activeConference && step === 'availability' && !draft && !profile) {
+      navigate(joinPath(activeConference.code), { replace: true });
+    }
+  }, [activeConference, draft, navigate, profile, step]);
 
   return (
     <SafeAreaProvider>
@@ -269,15 +286,15 @@ export default function App() {
         <MotionPreferences>
           <SiteShell page={page} navigate={navigate} scrollRef={scroll}>
             <Flow step={screen} fadeOnly>
-              {page === 'home' ? <Landing navigate={navigate} /> : page === 'events' ? <PastEvents /> : page === 'talks' ? (
-                <PastTalks onBrowseSchedule={() => { setBrowsingSchedule(true); navigate('/join'); }} />
+              {page === 'home' ? <Landing navigate={navigate} hasConferences={remembered.length > 0}
+                resumeConference={conference ? { name: conference.name, path: joinPath(conference.code, profile ? 'plan' : 'about') } : undefined} />
+              : page === 'events' ? <PastEvents /> : page === 'talks' ? (
+                <PastTalks onBrowseSchedule={() => navigate(conference ? joinPath(conference.code, 'schedule') : '/join')} />
               )
+              : page === 'myConferences' ? <MyConferences conferences={remembered} navigate={navigate} onForget={forgetConference} />
               : page === 'organizers' ? (
                 <OrganizersPage>
-                  <Organizer onPublishSample={publishSample} onTrySample={(code) => {
-                    setBrowsingSchedule(false);
-                    navigate(`/join/${encodeURIComponent(code)}`);
-                  }} />
+                  <Organizer onPublishSample={publishSample} onTrySample={(code) => navigate(joinPath(code))} />
                 </OrganizersPage>
               )
               : !activeConference ? (
@@ -290,28 +307,39 @@ export default function App() {
                   }} />
                 </Container>
               ) : (
-                <Container style={layout.content}>
+                <Container style={[layout.content, (screen === 'schedule' || (screen === 'plan' &&
+                  (section === 'My schedule' || section === 'Event schedule'))) && layout.scheduleContent]}>
                 <View key={activeConference.code} style={styles.stack}>
                   <View style={styles.row}>
                     <Label>{activeConference.name}</Label>
-                    <Action title="Switch conference" onPress={() => { changeConference(); navigate('/join'); }} secondary />
-                    <Action title={browsingSchedule ? 'Back to check-in' : 'Browse event schedule'}
-                      onPress={() => { setResumeTalk(undefined); setBrowsingSchedule((current) => !current); }} secondary />
-                    {profile || draft || attendeeToken ? <Action title="Start over / not you?" onPress={startOver} secondary /> : null}
+                    <Action title="Switch conference" onPress={() => navigate('/my-conferences')} secondary />
+                    {screen === 'schedule' ? (
+                      <Action title={profile ? 'Back to my plan' : 'Back to check-in'}
+                        onPress={() => { setResumeTalk(undefined); navigate(joinPath(activeConference.code, profile ? 'plan' : 'about')); }} secondary />
+                    ) : !profile ? (
+                      <Action title="Browse event schedule"
+                        onPress={() => navigate(joinPath(activeConference.code, 'schedule'))} secondary />
+                    ) : null}
                   </View>
-                  {browsingSchedule ? (
+                  {screen === 'schedule' ? (
                     <ScheduleBrowser conference={activeConference} attendeeToken={attendeeToken} initialTalkId={resumeTalk}
                       onProfile={editProfile} />
                   ) : screen === 'profile' ? (
-                    <ProfileForm initial={draft ?? profile} previousResume={previousResume} sample={activeConference.sample}
-                      step={step === 'availability' ? 'availability' : 'about'}
+                    <ProfileForm initial={draft ?? profile} previousResume={previousResume} conference={activeConference}
+                      step={step === 'availability' && (draft || profile) ? 'availability' : 'about'}
                       onChange={changeDraft} onSave={saveProfile}
-                      onStepChange={(next) => navigate(joinPath(activeConference.code, next))} />
+                      onStepChange={(next) => {
+                        attendeeSessions.update(activeConference.code, { draftStep: next });
+                        navigate(joinPath(activeConference.code, next));
+                      }}
+                      onCancel={profile ? cancelDraft : undefined} />
                   ) : profile ? (
                     <Recommendations conference={activeConference} profile={profile} attendeeToken={attendeeToken} requested={requested}
-                      recommendations={recommendations}
-                      onEdit={editProfile}
-                      onRefreshPeople={refreshPeople}
+                      recommendations={recommendations} section={section} onSection={(next) => {
+                        setSection(next);
+                        attendeeSessions.update(activeConference.code, { section: next });
+                      }}
+                      onEdit={editProfile} onPeople={keepPeople}
                       onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
                   ) : null}
                 </View>
@@ -326,8 +354,9 @@ export default function App() {
 }
 
 const layout = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
+  screen: { flex: 1, backgroundColor: colors.desktop },
   content: { maxWidth: 920, paddingVertical: 48, gap: 34 },
+  scheduleContent: { maxWidth: 1100 },
   entry: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', columnGap: 64, rowGap: 32 },
   intro: { flexBasis: 360, flexGrow: 1, flexShrink: 1, maxWidth: 440, gap: 12 },
   coverTitle: { color: colors.ink, fontSize: 58, fontWeight: '700', letterSpacing: -3.5 },

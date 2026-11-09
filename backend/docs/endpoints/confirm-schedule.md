@@ -2,6 +2,27 @@
 
 **Status:** Draft; route and schema are subject to merge. **TBD** means the decision is intentionally open.
 
+## Implemented behavior (as of 2026-11-09)
+
+The platform gateway kills every request at 15 s and `semantic_text` embeds roughly 50 talks per
+3.4 s, so the write cannot finish inside one request for a real conference.
+
+- `POST /confirm-schedule` validates and normalizes synchronously (422 on bad input, 401 without the
+  organizer token), writes `schedule_status=indexing` on the conference doc, and then:
+  - `<= SYNC_TALK_LIMIT` (100) talks: indexes inline and returns `"status": "ready"`;
+  - more talks: schedules the bulk index as a background task and returns `"status": "indexing"`.
+- Response: `conference_id`, `talk_count`, `status`, `join_url`, `qr_code_data_url`.
+- The stale-talk `delete_by_query` runs only after every bulk batch succeeded; a failure leaves the
+  previous schedule intact and sets `schedule_status=failed` with `schedule_error`.
+- Progress lives on the `conferences` doc (`schedule_status`, `schedule_talk_count`,
+  `schedule_indexed_count`, `schedule_error`, `schedule_updated_at`) and is public via
+  `GET /conferences/{conference_id}/schedule-status`; `GET /join/{conference_id}` also returns
+  `schedule_status`, `schedule_error`, the indexed/total counts and `talk_count`, and no longer
+  404s while indexing (name + empty `talks` + status). An `indexing` whose `schedule_updated_at`
+  is older than 120 s is reported as `failed` (job died with its pod); re-confirming repairs it.
+- Limit: the per-conference lock is in-process; with two replicas, concurrent confirms for one
+  conference landing on different pods can still overlap on the stale delete.
+
 ## Purpose and actor
 
 Allow an authorized organizer to confirm the reviewed, parsed schedule. Persist confirmed sessions so attendees can receive recommendations. Return the attendee join link and QR code described by the product flow; exact payload and generation mechanism are **TBD**.

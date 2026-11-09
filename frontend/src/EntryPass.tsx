@@ -2,12 +2,12 @@ import { useMemo, useState } from 'react';
 import { create } from 'qrcode';
 import { Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 
 import { Action, colors, Copy, Heading, Label, Message, styles } from './ui';
 
-function roundedCode(link: string) {
-  const { modules } = create(link, { errorCorrectionLevel: 'M' });
+function roundedCode(link: string, branded: boolean) {
+  const { modules } = create(link, { errorCorrectionLevel: branded ? 'H' : 'M' });
   const { size } = modules;
   const dark = (y: number, x: number) => y >= 0 && x >= 0 && y < size && x < size && modules.get(y, x);
   const paths: string[] = [];
@@ -37,25 +37,42 @@ function roundedCode(link: string) {
   return { path: paths.join(''), extent: size + 8 };
 }
 
-function PassCode({ link, size }: { link: string; size: number }) {
-  const { path, extent } = useMemo(() => roundedCode(link), [link]);
+function PassCode({ link, size, branded = false }: { link: string; size: number; branded?: boolean }) {
+  const { path, extent } = useMemo(() => roundedCode(link, branded), [link, branded]);
+  const center = (extent - 8) / 2;
+  const badgeSize = Math.min(center * 0.36, 9);
 
   return (
     <View style={pass.frame}>
       <Svg width={size} height={size} viewBox={`-4 -4 ${extent} ${extent}`}>
         <Rect x={-4} y={-4} width={extent} height={extent} fill={colors.white} />
         <Path d={path} fill="#000000" />
+        {branded && (
+          <G translateX={center - badgeSize / 2} translateY={center - badgeSize / 2} scale={badgeSize / 100}>
+            <Circle cx={50} cy={50} r={50} fill="#FFFFFF" />
+            <Circle cx={50} cy={50} r={45} fill="none" stroke="#000000" strokeWidth={2.5} />
+            <Circle cx={50} cy={32} r={19} fill="none" stroke="#000000" strokeWidth={4} />
+            <Path
+              d="M47 53 Q50 48 53 53 L67 80 Q70 88 62 85 L50 81 L38 85 Q30 88 33 80 Z"
+              fill="none"
+              stroke="#000000"
+              strokeWidth={4}
+              strokeLinejoin="round"
+            />
+          </G>
+        )}
       </Svg>
     </View>
   );
 }
 
-export function EntryPass({ name, code, link, details, onReset, onTrySample }: {
+export function EntryPass({ name, code, link, details, onReset, onBack, onTrySample }: {
   name: string;
   code: string;
   link: string;
   details?: string;
   onReset: () => void;
+  onBack?: () => void;
   onTrySample?: () => void;
 }) {
   const [presenting, setPresenting] = useState(false);
@@ -64,6 +81,7 @@ export function EntryPass({ name, code, link, details, onReset, onTrySample }: {
   const { width, height } = useWindowDimensions();
   const qrSize = Math.max(120, Math.min(width - 80, height * 0.5, 520));
   const web = Platform.OS === 'web';
+  const stacked = width < 720;
   const canShare = !web || typeof navigator.share === 'function';
 
   async function copyLink() {
@@ -124,26 +142,27 @@ export function EntryPass({ name, code, link, details, onReset, onTrySample }: {
 
   return (
     <View style={styles.stack}>
-      <Label>{onTrySample ? 'Sample conference published' : 'Ready to share'}</Label>
+      <Label>{onTrySample ? 'Sample conference published' : 'Live · Ready to share'}</Label>
       <Heading large>{name}</Heading>
       {details ? <Copy>{details}</Copy> : null}
-      <Copy>{onTrySample
-        ? 'Preview the QR here, then try check-in in this app session.'
-        : 'Scan the QR with your phone camera, or share the link with attendees.'}</Copy>
-      <View style={pass.row}>
+      <View style={[pass.card, stacked && pass.cardStacked]}>
         <Pressable accessibilityRole="button" accessibilityLabel="Open full-screen QR"
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
           onPress={openPresentation}
           style={({ pressed }) => [pass.preview, focused && pass.focused, pressed && pass.pressed]}>
-          <PassCode link={link} size={Math.max(120, Math.min(width - 96, 230))} />
-          <Text style={pass.previewLabel}>Open full-screen QR ↗</Text>
+          <PassCode link={link} size={Math.max(120, Math.min(width - 112, 220))} />
         </Pressable>
-        {passInfo()}
-      </View>
-      <View style={styles.row}>
-        {onTrySample ? <Action title="Try attendee check-in" onPress={onTrySample} /> : null}
-        {shareActions}
-        <Action title="Create another conference" onPress={onReset} secondary />
+        <View style={pass.side}>
+          {passInfo()}
+          <View style={pass.actions}>
+            {onTrySample ? <Action title="Try attendee check-in" onPress={onTrySample} /> : null}
+            {web ? <Action title="Copy join link" onPress={() => void copyLink()} secondary={!!onTrySample} /> : null}
+            {canShare && !web ? <Action title="Share join link" onPress={() => void share()} secondary /> : null}
+            <Action title="Open full-screen QR" onPress={openPresentation} secondary />
+            {onBack ? <Action title="Back to organizer dashboard" onPress={onBack} secondary /> : null}
+          </View>
+          <Action title="Create another conference" onPress={onReset} secondary />
+        </View>
       </View>
       {!presenting && message ? <Message>{message}</Message> : null}
       <Modal visible={presenting} animationType="none" presentationStyle="fullScreen" onRequestClose={close}>
@@ -159,7 +178,7 @@ export function EntryPass({ name, code, link, details, onReset, onTrySample }: {
             <Label>{onTrySample ? 'Sample QR · preview only' : 'Scan to join'}</Label>
             <Text accessibilityRole="header" style={[styles.heading, styles.largeHeading, pass.title]}>{name}</Text>
             <View accessible accessibilityRole="image" accessibilityLabel={`Join QR code for ${name}`}>
-              <PassCode link={link} size={qrSize} />
+              <PassCode link={link} size={qrSize} branded />
             </View>
             {passInfo(true)}
             {message ? <Message>{message}</Message> : null}
@@ -173,6 +192,13 @@ export function EntryPass({ name, code, link, details, onReset, onTrySample }: {
 const pass = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.chrome },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 24, rowGap: 18 },
+  card: {
+    flexDirection: 'row', alignItems: 'center', columnGap: 28, rowGap: 20, padding: 24,
+    backgroundColor: colors.white, borderRadius: 16, borderWidth: 1, borderColor: colors.chrome,
+  },
+  cardStacked: { flexDirection: 'column', alignItems: 'stretch' },
+  side: { flex: 1, minWidth: 220, gap: 18 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 20, rowGap: 10, alignItems: 'center' },
   frame: { alignSelf: 'center', backgroundColor: colors.white, borderWidth: 1, borderColor: '#A8B8D7', borderRadius: 12, padding: 12 },
   preview: { alignItems: 'center', gap: 10, padding: 8, borderRadius: 12 },
   previewLabel: { color: colors.accent, fontSize: 15, fontWeight: '700', textDecorationLine: 'underline' },

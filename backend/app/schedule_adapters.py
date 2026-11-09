@@ -17,9 +17,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 NON_TALK_RE = re.compile(
-    r"^\s*(registration|check[- ]?in|badge pick[- ]?up|coffee( break)?|break|lunch|breakfast|"
+    r"^\W*(registration|check[- ]?in|badge pick[- ]?up|coffee( break)?|break|lunch|breakfast|"
     r"dinner|reception|networking|happy hour|doors open|opening of the day|closing of the day|"
-    r"sponsor showcase|exhibit)\b",
+    r"sponsor showcase|solutions showcase|exhibit|coat(\s*(\+|&|and|/)\s*bag)? check|bag check)\b",
     re.IGNORECASE,
 )
 NON_TALK_CATEGORIES = {"REGISTRATION", "BREAKS", "BREAK", "SOCIAL"}
@@ -333,6 +333,162 @@ def parse_frab_xml(body: bytes, tz_name: str | None) -> Draft:
                         "end_time": end,
                     }
                 )
+    return draft.finish()
+
+
+# ---------------------------------------------------------------------------- LF events HTML
+
+LF_EVENTS_MARKERS = (b'class="sess-wrap', b'class="sess__seotime"')
+_VOID_TAGS = {"br", "img", "input", "hr", "meta", "link", "source", "wbr", "area", "col"}
+
+
+def looks_like_lf_events(body: bytes) -> bool:
+    """Linux Foundation events WordPress theme (KubeCon, OSS Summit, co-located days)."""
+    return all(marker in body for marker in LF_EVENTS_MARKERS)
+
+
+class _LfSessionParser(HTMLParser):
+    """Walk the LF schedule timeline and collect one record per `div.sess-wrap`.
+
+    Fields are read from the element classes the theme uses; the hidden `sess__seo` block
+    carries the machine-readable `<time datetime>` pair and the HTML description.
+    """
+
+    FIELD_CLASSES = (
+        "sess-wrap",
+        "sess__title",
+        "sess__room",
+        "sess__speakers",
+        "sess__seodesc",
+        "sess__seotime",
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sessions: list[dict[str, Any]] = []
+        self._stack: list[tuple[str, str | None]] = []
+        self._current: dict[str, Any] | None = None
+
+    @classmethod
+    def _field(cls, names: list[str]) -> str | None:
+        for name in cls.FIELD_CLASSES:
+            if name in names:
+                return name
+        if "tag" in names and "tag--primary" in names:
+            return "track"
+        return None
+
+    def _active_field(self) -> str | None:
+        for _, name in reversed(self._stack):
+            if name:
+                return name
+        return None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        names = (attributes.get("class") or "").split()
+        field_name = self._field(names)
+        if tag == "div" and field_name == "sess-wrap":
+            self._current = {
+                "id": None,
+                "title": [],
+                "room": [],
+                "speakers": [],
+                "desc": [],
+                "times": [],
+                "track": [],
+            }
+        elif self._current is not None:
+            if tag == "a" and "sess-link" in names:
+                sid = attributes.get("data-session-id")
+                if not sid:
+                    found = re.search(r"[?&]id=(\d+)", attributes.get("href") or "")
+                    sid = found.group(1) if found else None
+                self._current["id"] = sid
+            elif tag == "time" and self._active_field() == "sess__seotime":
+                self._current["times"].append(attributes.get("datetime") or "")
+            elif tag in {"p", "br", "li"} and self._active_field() == "sess__seodesc":
+                self._current["desc"].append("\n")
+            elif field_name == "track":
+                self._current["track"].append("")
+        if tag not in _VOID_TAGS:
+            self._stack.append((tag, field_name))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _VOID_TAGS:
+            return
+        for index in range(len(self._stack) - 1, -1, -1):
+            if self._stack[index][0] == tag:
+                del self._stack[index:]
+                break
+        if self._current is not None and not any(name == "sess-wrap" for _, name in self._stack):
+            self.sessions.append(self._current)
+            self._current = None
+
+    def handle_data(self, data: str) -> None:
+        if self._current is None:
+            return
+        field_name = self._active_field()
+        if field_name in {"sess__title", "sess__room", "sess__speakers"}:
+            self._current[field_name.removeprefix("sess__")].append(data)
+        elif field_name == "sess__seodesc":
+            self._current["desc"].append(data)
+        elif field_name == "track" and self._current["track"]:
+            self._current["track"][-1] += data
+
+
+def _squash(parts: list[str]) -> str:
+    return re.sub(r"\s+", " ", "".join(parts)).strip()
+
+
+def parse_lf_events_html(body: bytes, tz_name: str | None) -> Draft:
+    """LF events schedule page: `events.linuxfoundation.org/<event>/program/schedule/`.
+
+    Times are naive local wall-clock values, so `tz_name` is required to keep any session.
+    """
+    draft = Draft(timezone=tz_name)
+    tz = zone(tz_name)
+    parser = _LfSessionParser()
+    parser.feed(body.decode("utf-8", errors="replace"))
+    seen: set[str] = set()
+    untimed = 0
+    for session in parser.sessions:
+        title = _squash(session["title"])
+        if not title:
+            continue
+        sid = session["id"] or title
+        if sid in seen:
+            continue
+        seen.add(sid)
+        tracks = [t for t in (_squash([x]) for x in session["track"]) if t]
+        if is_non_talk(title, tracks):
+            draft.skipped_non_talks += 1
+            continue
+        try:
+            start_raw, end_raw = (datetime.fromisoformat(t) for t in session["times"][:2])
+        except ValueError:
+            untimed += 1
+            continue
+        start = localize(start_raw, tz)
+        end = localize(end_raw, tz)
+        speakers = [s.strip() for s in _squash(session["speakers"]).split(",") if s.strip()]
+        description = re.sub(r"[ \t\xa0]+", " ", "".join(session["desc"]))
+        description = re.sub(r"\s*\n\s*", "\n", description).strip() or None
+        draft.talks.append(
+            {
+                "title": title,
+                "abstract": description,
+                "speakers": speakers,
+                "room": _squash(session["room"]) or None,
+                "track": tracks,
+                "start_time": start,
+                "end_time": end,
+            }
+        )
+    if untimed:
+        draft.warnings.append(f"Skipped {untimed} sessions that have no scheduled time yet")
+    if draft.talks and tz:
+        draft.warnings.append(f"Session times are local wall-clock values; localized to {tz.key}")
     return draft.finish()
 
 

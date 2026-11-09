@@ -12,6 +12,7 @@ This is a reference for the schedule importer (`POST /upload-schedule` → draft
 | Sessionize | The most common CFP+schedule tool for community and dev conferences (KotlinConf, AI Engineer, NDC, DevFests, many DevOpsDays/Cloud Native Days) | `https://sessionize.com/api/v2/<id>/view/All` | Yes (JSON) | UTC `Z` **or floating**, depending on an organizer setting |
 | pretalx (incl. self-hosted) | Common in Python and open-source communities (PyCon DE, EuroPython, FOSDEM's CFP, CCC/c3voc events) | `https://<host>/<slug>/schedule/export/schedule.json` | Yes (frab JSON) | Offsets on every time plus `time_zone_name` |
 | frab/Pentabarf XML | FOSDEM, CCC, and anything that exports `schedule.xml` (pretalx does too) | `https://fosdem.org/<year>/schedule/xml` | Yes (XML) | Offsets on `date` plus `time_zone_name` |
+| Linux Foundation events site | Every LF/CNCF event page (`events.linuxfoundation.org/<event>/program/schedule/`): the same WordPress theme renders the whole schedule server-side (KubeCon NA 2026: 3.6 MB, 600 sessions) with no link to Sched or an ics | the page | Yes (HTML: `div.sess-wrap` with hidden `sess__seotime` `<time datetime>` pairs, `sess__title`, `sess__room`, `sess__speakers` comma-separated, `.tag--primary` as track, `sess__seodesc` HTML) | **Floating local times**; the conference timezone is required |
 | Luma | Common for meetups and hackathons. It describes one event, not a multi-session agenda | `https://luma.com/<slug>` | No agenda, only free text | Event has an IANA `timezone` |
 | Eventbrite / Meetup | Ticketing/RSVP. Usually no agenda | event page | No (LLM on description, if any) | Event-level only |
 | Plain HTML agenda | Very common for small and mid-size conferences (Hugo/Jekyll/WordPress sites) | the page | LLM | Usually prose ("All times in US Central") or none |
@@ -202,7 +203,8 @@ An HTML page can also *point at* a structured source. After fetching, grep it fo
 | `%PDF-` | PDF → LLM `input_file` |
 | `\x89PNG`, `\xFF\xD8\xFF`, `RIFF….WEBP` | image → LLM `input_image` |
 | `PK\x03\x04` + `word/document.xml` | DOCX (already accepted) → text via `python-docx` → LLM |
-| `<!doctype html` / `<html` | HTML → check for structured links, else text → LLM |
+| `<!doctype html` / `<html` containing `class="sess-wrap` and `class="sess__seotime"` | LF events schedule page → `parse_lf_events_html` |
+| `<!doctype html` / `<html` | HTML → check for structured links, else text (whitespace collapsed, 120k chars) → LLM |
 
 `/upload-schedule` currently accepts only PDF/DOCX/PNG/JPEG/WEBP. To accept these formats, the allow-list needs `text/calendar`, `application/json`, `application/xml`/`text/xml` and `text/html`, plus sniffing for `application/octet-stream`.
 
@@ -212,7 +214,7 @@ An HTML page can also *point at* a structured source. After fetching, grep it fo
 source_url ──► safe_fetch (SSRF-guarded) ─┐
                                           ├─► detect(url, bytes, content_type) ─► adapter
 upload ───────────────────────────────────┘
-adapters (deterministic, no LLM):  ics │ sessionize_all │ frab_json │ frab_xml
+adapters (deterministic, no LLM):  ics │ sessionize_all │ frab_json │ frab_xml │ lf_events_html
 LLM fallback (gpt-5.4-mini, OPENAI_SCHEDULE_MODEL):  html_text │ pdf │ docx_text │ image
       ──► normalize (tz localize, html-unescape, trim, end>start, in-range) ──► draft {talks, warnings, source_format, timezone}
 ```

@@ -3,7 +3,13 @@ from pathlib import Path
 import pytest
 
 from app import schedule_fetch
-from app.schedule_adapters import clean_sched_location, split_summary
+from app.schedule_adapters import (
+    clean_sched_location,
+    is_non_talk,
+    looks_like_lf_events,
+    parse_lf_events_html,
+    split_summary,
+)
 from app.schedule_fetch import UnsafeUrlError, normalize_url, resolve_public_address
 from app.schedule_parser import (
     find_structured_link,
@@ -141,6 +147,88 @@ def test_frab_xml_rejects_entity_expansion() -> None:
         )
 
 
+# ---------------------------------------------------------------- Linux Foundation events HTML
+
+
+def test_lf_events_html_is_parsed_deterministically() -> None:
+    body = (FIXTURES / "lf-events-kubecon-na-2026-schedule.html").read_bytes()
+    assert sniff_format(body, None) == "html"
+    assert looks_like_lf_events(body)
+    assert not looks_like_lf_events(
+        (FIXTURES / "html-devopsdays-chicago-2025-program.html").read_bytes()
+    )
+
+    draft = parse("lf-events-kubecon-na-2026-schedule.html", "America/Denver")
+    assert draft["source_format"] == "lf_events_html"
+    assert draft["timezone"] == "America/Denver"
+    assert len(draft["talks"]) == 35
+    assert any("Skipped 8 non-talk rows" in w for w in draft["warnings"])
+    titles = {t["title"] for t in draft["talks"]}
+    assert "Registration + Badge Pick-Up" not in titles
+    assert "Coat + Bag Check" not in titles
+    assert "☕ Coffee Break" not in titles
+    assert "Solutions Showcase" not in titles
+
+    demo = next(t for t in draft["talks"] if t["title"].startswith("Demo Theater: Agentic AI"))
+    assert demo["speakers"] == ["Yodar Shafrir"]
+    assert demo["room"] == (
+        "Salt Palace | Level 1 | Solutions Showcase | Hall 1 | Alpine Overlook Zone | Demo Theater"
+    )
+    assert demo["track"] == ["Sponsor Demo Theater"]
+    assert demo["start_time"] == "2026-11-10T10:50:00-07:00"
+    assert demo["end_time"] == "2026-11-10T11:10:00-07:00"
+    assert demo["abstract"].startswith("Autonomous workloads need autonomous infrastructure.")
+    assert "<p>" not in demo["abstract"]
+
+    panel = next(t for t in draft["talks"] if t["title"] == "Welcome + Opening Remarks")
+    assert panel["speakers"][:3] == ["Jonathan Bryce", "Chris Aniszczyk", "Robert Nishihara"]
+    assert len(panel["speakers"]) == 6
+
+    intro = next(t for t in draft["talks"] if t["title"] == "Project Lightning Talk Opening/ Intro")
+    assert intro["speakers"] == ["Robert Sirchia"]
+    assert intro["abstract"] is None
+    assert intro["start_time"] == "2026-11-09T09:30:00-07:00"
+
+    colocated = next(t for t in draft["talks"] if t["title"].startswith("ArgoCon Hosted by CNCF"))
+    assert colocated["speakers"] == []
+    assert colocated["track"] == ["CNCF-hosted Co-located Events"]
+
+
+def test_lf_events_html_without_timezone_drops_floating_times() -> None:
+    draft = parse("lf-events-kubecon-na-2026-schedule.html")
+    assert draft["source_format"] == "lf_events_html"
+    assert draft["talks"] == []
+    assert any("no conference timezone" in w for w in draft["warnings"])
+
+
+def test_lf_events_html_skips_untimed_sessions_and_dedupes_ids() -> None:
+    session = """
+    <div class="sess-wrap"><a class="sess-link" href="/s/?id={id}" data-session-id="{id}">
+      <div class="sess"><div class="sess__title">{title}</div>
+      <span class="sess__room">Room 1</span></div></a>
+      <div class="sess__seo" hidden><div class="sess__seotime">{times}</div></div></div>"""
+    times = (
+        '<time datetime="2026-11-10T09:00:00">x</time><time datetime="2026-11-10T09:30:00">y</time>'
+    )
+    body = (
+        "<html><body>"
+        + session.format(id=1, title="Kept", times=times)
+        + session.format(id=1, title="Kept again", times=times)
+        + session.format(id=2, title="Not scheduled", times="")
+        + "</body></html>"
+    ).encode()
+    draft = parse_lf_events_html(body, "America/Denver")
+    assert [t["title"] for t in draft.talks] == ["Kept"]
+    assert any("Skipped 1 sessions that have no scheduled time" in w for w in draft.warnings)
+
+
+def test_non_talk_regex_ignores_leading_emoji() -> None:
+    assert is_non_talk("☕ Coffee Break", [])
+    assert is_non_talk("Coat + Bag Check", [])
+    assert not is_non_talk("Breaking up Is Hard, but the Future Is with Helm 4", [])
+    assert not is_non_talk("Coat of Arms: Designing Kubernetes Operators", [])
+
+
 # ---------------------------------------------------------------- detection and normalize
 
 
@@ -205,6 +293,16 @@ def test_html_to_text_keeps_rows_and_drops_scripts() -> None:
     assert "All times are in US Central Time" in text
     assert "<script" not in text and "function" not in text.lower()[:200]
     assert "Reid Savage" in text
+
+
+def test_html_to_text_collapses_template_indentation() -> None:
+    body = (
+        b"<html><body>\n\t\t\t<div>\n\t\t\t\t<p>Title</p>\n\t\t\t\t\t<p>Room</p>\n"
+        b"\t\t\t</div></body></html>"
+    )
+    assert html_to_text(body) == "Title\n\nRoom"
+    table = b"<table><tr><td>\n\t\t9:00</td><td>\t\tTalk</td></tr></table>"
+    assert html_to_text(table) == "9:00\tTalk"
 
 
 # ---------------------------------------------------------------- SSRF policy

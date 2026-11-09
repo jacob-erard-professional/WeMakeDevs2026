@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import { API_BASE_URL as apiBase } from './apiBase';
 import type { Attendee, Conference, ResumeAsset, Talk } from './conference';
+import { venueTimestamp } from './scheduleText';
 
 type JoinResponse = {
   conference_id: string;
@@ -36,7 +37,6 @@ export type LiveRecommendations = {
   schedules: Array<{ relevance: number; talks: ApiTalk[] }>;
   attendees: { similar: ApiPerson[]; matches: ApiPerson[] };
 };
-export type PeopleRecommendations = LiveRecommendations['attendees'];
 export type SaveProfileResult = {
   attendee_id: string;
   attendee_token?: string;
@@ -61,7 +61,7 @@ async function request(url: string, options: RequestInit = {}, timeoutMs = 15000
   }
 }
 
-function venueMinutes(timestamp: string) {
+export function venueMinutes(timestamp: string) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return 0;
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -92,6 +92,7 @@ export function conferenceFromSchedule(data: JoinResponse): Conference {
     title: talk.title,
     abstract: talk.abstract,
     startsAt: talk.start_time,
+    endsAt: talk.end_time,
     track: talk.track?.join(', ') || 'Conference session',
     room: talk.room || 'Room to be announced',
     start: venueMinutes(talk.start_time),
@@ -108,6 +109,17 @@ export async function loadRelatedTalks(conferenceId: string, talkId: string, tok
   if (!response.ok) throw await apiError(response, 'Could not load similar past talks.');
   const result = await response.json() as { talks: ArchiveTalk[] };
   return result.talks;
+}
+
+export async function searchSuggestedPeople(conferenceId: string, token: string, note: string, signal: AbortSignal) {
+  const response = await request(`${apiBase}/conferences/${encodeURIComponent(conferenceId)}/people/recommend`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+    signal,
+  });
+  if (!response.ok) throw await apiError(response, 'Could not update people suggestions.');
+  return response.json() as Promise<LiveRecommendations['attendees']>;
 }
 
 async function resumePart(resume: ResumeAsset): Promise<Blob | { uri: string; name: string; type: string }> {
@@ -129,7 +141,11 @@ export async function parseResume(resume: ResumeAsset, signal?: AbortSignal) {
   else body.append('resume', part as unknown as Blob);
   const response = await request(`${apiBase}/parse-resume`, { method: 'POST', body, signal }, 45000);
   if (!response.ok) throw await apiError(response, 'Could not read the résumé.');
-  return response.json() as Promise<{ resume_profile: ResumeProfile; is_linkedin_pdf: boolean }>;
+  return response.json() as Promise<{
+    resume_profile: ResumeProfile;
+    is_linkedin_pdf: boolean;
+    contact?: { name: string; email: string; linkedin_url: string };
+  }>;
 }
 
 export async function saveLiveProfile(
@@ -137,6 +153,14 @@ export async function saveLiveProfile(
   profile: Attendee,
   attendeeToken?: string,
 ) {
+  const blockouts = profile.unavailable.map(({ date, start, end }) => {
+    const start_time = date && venueTimestamp(date, start);
+    const end_time = date && venueTimestamp(date, end);
+    if (!start_time || !end_time || end_time <= start_time) {
+      throw new Error('An unavailable time could not be placed on the conference schedule. Check the selected day and time.');
+    }
+    return { start_time, end_time };
+  });
   const payload = {
     conference_id: conference.code,
     name: profile.name,
@@ -146,9 +170,7 @@ export async function saveLiveProfile(
     looking_for: profile.lookingFor.trim(),
     linkedin_url: profile.linkedin || undefined,
     discovery_opt_in: profile.discoverable,
-    // Time ranges are currently entered as clock times without a date/time zone. They remain
-    // local until the UI collects timezone-aware timestamps for the API.
-    blockout_times: [],
+    blockout_times: blockouts,
   };
   // /save-user-data takes multipart with a JSON `profile` field plus an optional `resume` file.
   // Let fetch set Content-Type so the multipart boundary is included.
@@ -163,7 +185,7 @@ export async function saveLiveProfile(
     method: 'POST',
     headers: attendeeToken ? { Authorization: `Bearer ${attendeeToken}` } : undefined,
     body,
-  });
+  }, 45000);
   if (!response.ok) throw await apiError(response, 'Could not save your profile to the conference server.');
   const result = await response.json() as Partial<SaveProfileResult> & { attendee_id: string };
   return { ...result, recommendations: normalizeRecommendations(result.recommendations) } satisfies SaveProfileResult;
@@ -178,22 +200,6 @@ export function normalizeRecommendations(value: unknown): LiveRecommendations {
     schedules: list(partial.schedules),
     attendees: { similar: list(partial.attendees?.similar), matches: list(partial.attendees?.matches) },
   };
-}
-
-export async function refreshPeopleRecommendations(
-  conferenceId: string,
-  profileId: string,
-  attendeeToken: string,
-  signal?: AbortSignal,
-): Promise<PeopleRecommendations> {
-  const query = new URLSearchParams({ profile_id: profileId });
-  const response = await request(
-    `${apiBase}/conferences/${encodeURIComponent(conferenceId)}/people/recommend?${query}`,
-    { headers: { Authorization: `Bearer ${attendeeToken}` }, signal },
-  );
-  if (!response.ok) throw await apiError(response, 'Could not refresh people recommendations.');
-  const result = await response.json() as unknown;
-  return normalizeRecommendations({ attendees: result }).attendees;
 }
 
 async function apiError(response: Response, fallback: string) {
@@ -216,6 +222,14 @@ export async function parseLiveSchedule(
   const query = new URLSearchParams({ conference_id: session.conferenceId });
   const headers = { 'X-Organizer-Token': session.organizerToken };
   let options: RequestInit = { method: 'POST', headers };
+  // Schedule pages often list wall-clock times with no zone (LF events, floating Sessionize).
+  // The organizer's browser zone is the best default for an in-person event.
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (timezone) query.set('timezone', timezone);
+  } catch {
+    // No Intl zone support: the backend falls back to the conference's stored zone.
+  }
   if (sourceUrl) query.set('source_url', sourceUrl);
   else if (asset) {
     const file = await resumePart(asset);

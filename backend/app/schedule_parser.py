@@ -8,7 +8,8 @@ Pipeline (see `docs/schedule-formats.md`):
     url ──► rewrite (Sched → /all.ics, Sessionize → view/All, webcal → https)
         ──► safe_fetch (SSRF-guarded, see `schedule_fetch`) ─┐
     upload ──────────────────────────────────────────────────┴─► detect(body) ─► adapter
-    deterministic adapters: ics │ sessionize │ pretalx/frab JSON │ frab XML   (no LLM)
+    deterministic adapters: ics │ sessionize │ pretalx/frab JSON │ frab XML │ LF events HTML
+    (no LLM)
     LLM fallback (OPENAI_SCHEDULE_MODEL): html text │ docx text │ pdf │ image
         ──► normalize (tz, end > start, dedupe) ──► {talks, warnings, source_format, timezone}
 
@@ -30,7 +31,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from app import schedule_adapters as adapters
-from app.schedule_fetch import FetchError, Fetched, UnsafeUrlError, safe_fetch
+from app.schedule_fetch import Fetched, FetchError, UnsafeUrlError, safe_fetch
 
 DEFAULT_SCHEDULE_MODEL = "gpt-5.4-mini"
 MAX_LLM_TEXT_CHARS = 120_000
@@ -269,8 +270,10 @@ class _VisibleText(HTMLParser):
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
+        # Collapse the indentation of template-generated markup: the LF events page is 3.6 MB
+        # of which most is tabs, and the LLM budget is measured in characters.
         if not self._skip:
-            self.parts.append(data)
+            self.parts.append(re.sub(r"\s+", " ", data))
 
 
 def html_to_text(body: bytes) -> str:
@@ -278,6 +281,7 @@ def html_to_text(body: bytes) -> str:
     parser.feed(body.decode("utf-8", errors="replace"))
     text = "".join(parser.parts)
     text = re.sub(r"[ \xa0]+", " ", text)
+    text = re.sub(r" *\t+ *", "\t", text)
     text = re.sub(r" *\n *", "\n", text)
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
@@ -405,9 +409,13 @@ def parse_bytes(
             "Unrecognized schedule format; supported: ics, Sessionize JSON, pretalx/frab JSON "
             "or XML, HTML, PDF, DOCX, PNG, JPEG, WEBP"
         )
-    if fmt in {"ics", "json", "xml"}:
+    if fmt == "html" and adapters.looks_like_lf_events(body):
+        fmt = "lf_events_html"
+    if fmt in {"ics", "json", "xml", "lf_events_html"}:
         if fmt == "ics":
             draft = adapters.parse_ics(body, tz_name)
+        elif fmt == "lf_events_html":
+            draft = adapters.parse_lf_events_html(body, tz_name)
         elif fmt == "json":
             draft = adapters.parse_json_any(body, tz_name)
             fmt = (
@@ -466,7 +474,7 @@ def parse_schedule(
         target = rewrite_url(source_url)
         fetched: Fetched = safe_fetch(target)
         body, ctype, final_url = fetched.body, fetched.content_type, fetched.url
-        if sniff_format(body, ctype) == "html":
+        if sniff_format(body, ctype) == "html" and not adapters.looks_like_lf_events(body):
             link = find_structured_link(body[:1_000_000].decode("utf-8", "replace"), final_url)
             if link:
                 try:
