@@ -59,6 +59,11 @@ ES_API_KEY = os.getenv("ES_API_KEY")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 # Even on purpose: bulk payloads are [action, document] pairs and a batch must never split one.
 BULK_BATCH_SIZE = 500
+# The platform gateway cuts every request at 15 s and semantic_text embeds ~50 talks per 3.4 s,
+# so anything above this many talks is indexed after the response is sent.
+SYNC_TALK_LIMIT = 100
+_schedule_jobs: set[asyncio.Task[None]] = set()  # keep background tasks referenced until done
+_schedule_locks: dict[str, asyncio.Lock] = {}
 es = (
     Elasticsearch(ES_URL, api_key=ES_API_KEY, request_timeout=5)
     if ES_API_KEY
@@ -113,6 +118,12 @@ INDEX_BODIES: dict[str, dict[str, Any]] = {
                 "name": _TEXT,
                 "organizer_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
                 "created_at": _DATE,
+                # Publish state written by /confirm-schedule: indexing | ready | failed.
+                "schedule_status": _ID,
+                "schedule_talk_count": {"type": "integer"},
+                "schedule_indexed_count": {"type": "integer"},
+                "schedule_error": {"type": "keyword", "index": False},
+                "schedule_updated_at": _DATE,
             },
         },
     },
@@ -184,6 +195,13 @@ INDEX_BODIES: dict[str, dict[str, Any]] = {
     },
 }
 TALK_FIELDS = set(INDEX_BODIES["talks"]["mappings"]["properties"])
+SCHEDULE_STATUS_FIELDS = [
+    "schedule_status",
+    "schedule_talk_count",
+    "schedule_indexed_count",
+    "schedule_error",
+    "schedule_updated_at",
+]
 ATTENDEE_FIELDS = set(INDEX_BODIES["attendees"]["mappings"]["properties"])
 SAFE_ATTENDEE_SOURCE = {"includes": ["attendee_id", "name", "headline"]}
 TALK_SOURCE = ["talk_id", "title", "room", "start_time", "end_time"]
@@ -207,6 +225,9 @@ def ensure_indices() -> None:
             span.set_attribute("db.system", "elasticsearch")
             span.set_attribute("db.elasticsearch.index", index)
             if es.indices.exists(index=index):
+                if index == "conferences":
+                    # Strict mapping on a live index: adding fields is the only compatible change.
+                    es.indices.put_mapping(index=index, properties=body["mappings"]["properties"])
                 continue
             try:
                 es.indices.create(index=index, **body)
@@ -673,7 +694,11 @@ async def join_conference(conference_id: str) -> dict[str, Any]:
     """Resolve a QR/link to its confirmed, public schedule without exposing attendee data."""
     conference = await es_call(
         "read_join_conference_metadata",
-        lambda: es.get(index="conferences", id=conference_id, source_includes=["name"])["_source"],
+        lambda: es.get(
+            index="conferences",
+            id=conference_id,
+            source_includes=["name", *SCHEDULE_STATUS_FIELDS],
+        )["_source"],
     )
     hits = await es_call(
         "read_join_conference",
@@ -693,12 +718,38 @@ async def join_conference(conference_id: str) -> dict[str, Any]:
         )["hits"]["hits"],
         **{"db.elasticsearch.index": "talks"},
     )
-    if not hits:
+    schedule_status = conference.get("schedule_status") or ("ready" if hits else "none")
+    if not hits and schedule_status != "indexing":
         raise HTTPException(404, "Conference not found or has no confirmed schedule")
     return {
         "conference_id": conference_id,
         "name": conference["name"],
+        "schedule_status": schedule_status,
+        "talk_count": len(hits),
         "talks": [hit["_source"] for hit in hits],
+    }
+
+
+@app.get("/conferences/{conference_id}/schedule-status")
+async def schedule_status(conference_id: str) -> dict[str, Any]:
+    """Public publish progress for a conference; polled while /confirm-schedule indexes."""
+    conference = await es_call(
+        "read_schedule_status",
+        lambda: es.get(
+            index="conferences",
+            id=conference_id,
+            source_includes=["name", *SCHEDULE_STATUS_FIELDS],
+        )["_source"],
+        **{"db.elasticsearch.index": "conferences"},
+    )
+    return {
+        "conference_id": conference_id,
+        "name": conference["name"],
+        "schedule_status": conference.get("schedule_status") or "none",
+        "schedule_talk_count": conference.get("schedule_talk_count"),
+        "schedule_indexed_count": conference.get("schedule_indexed_count"),
+        "schedule_error": conference.get("schedule_error"),
+        "schedule_updated_at": conference.get("schedule_updated_at"),
     }
 
 
@@ -1184,63 +1235,159 @@ async def confirm_schedule(
             talk_id = f"{talk_id}-{position}"
         seen_ids.add(talk_id)
         normalized.append(talk_document(payload.conference_id, talk, talk_id, start, end))
-    actions: list[dict[str, Any]] = []
-    for talk in normalized:
-        doc_id = f"{payload.conference_id}:{talk['talk_id']}"
-        actions.append({"index": {"_index": "talks", "_id": doc_id}})
-        actions.append(talk)
-    for i in range(0, len(actions), BULK_BATCH_SIZE):
-        batch = actions[i : i + BULK_BATCH_SIZE]
-        resp = await es_call(
-            "confirm_schedule",
-            # semantic_text embeds every talk on write (~3.4 s per 50); 5 s is far too short.
-            lambda batch=batch: es.options(request_timeout=60).bulk(
-                operations=batch, refresh="wait_for"
-            ),
-            **{"db.elasticsearch.index": "talks", "conference.talk_count": len(batch) // 2},
-        )
-        body = getattr(resp, "body", resp)
-        if body.get("errors"):
-            failed = [
-                item for item in body.get("items", []) if "error" in next(iter(item.values()), {})
-            ]
-            logger.error(
-                "confirm_schedule_bulk_failed conference_id=%s failed_count=%d first_error=%s",
-                payload.conference_id,
-                len(failed),
-                next(iter(failed[0].values())).get("error") if failed else None,
-            )
-            raise HTTPException(502, "Some talks could not be stored")
-    confirmed_ids = [talk["talk_id"] for talk in normalized]
-    removed = await es_call(
-        "remove_stale_talks",
-        lambda: es.delete_by_query(
-            index="talks",
-            query={
-                "bool": {
-                    "filter": [{"term": {"conference_id": payload.conference_id}}],
-                    "must_not": [{"terms": {"talk_id": confirmed_ids}}],
-                }
-            },
-            refresh=True,
-            conflicts="proceed",
-        ),
-        **{"db.elasticsearch.index": "talks", "conference.talk_count": len(confirmed_ids)},
+    conference_id = payload.conference_id
+    await set_schedule_status(
+        conference_id, "indexing", talk_count=len(normalized), indexed_count=0, error=None
     )
-    logger.info(
-        "confirm_schedule_stale_removed conference_id=%s deleted=%s",
-        payload.conference_id,
-        getattr(removed, "body", removed).get("deleted"),
-    )
-    join_url = (
-        f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/join/{payload.conference_id}"
-    )
+    if len(normalized) <= SYNC_TALK_LIMIT:
+        # Small enough to embed inside the 15 s gateway budget: finish before answering.
+        try:
+            await index_schedule(conference_id, normalized)
+        except ScheduleIndexError as exc:
+            raise HTTPException(502, str(exc)) from None
+        status = "ready"
+    else:
+        job = asyncio.create_task(index_schedule_job(conference_id, normalized))
+        _schedule_jobs.add(job)
+        job.add_done_callback(_schedule_jobs.discard)
+        status = "indexing"
+    join_url = f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/join/{conference_id}"
     qr = qrcode.make(join_url)
     buffer = io.BytesIO()
     qr.save(buffer, format="PNG")
     return {
-        "conference_id": payload.conference_id,
+        "conference_id": conference_id,
         "talk_count": len(normalized),
+        "status": status,
         "join_url": join_url,
         "qr_code_data_url": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode(),
     }
+
+
+class ScheduleIndexError(Exception):
+    """A bulk batch was rejected; the old schedule is left in place."""
+
+
+async def set_schedule_status(
+    conference_id: str,
+    status: str,
+    *,
+    talk_count: int | None = None,
+    indexed_count: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Record publish progress on the conference doc. Raises HTTPException(503) on ES failure."""
+    doc: dict[str, Any] = {
+        "schedule_status": status,
+        "schedule_updated_at": datetime.now(UTC).isoformat(),
+    }
+    if talk_count is not None:
+        doc["schedule_talk_count"] = talk_count
+    if indexed_count is not None:
+        doc["schedule_indexed_count"] = indexed_count
+    # `error` is our own message, never user content; None clears a previous failure.
+    doc["schedule_error"] = error
+    await es_call(
+        "write_schedule_status",
+        lambda: es.update(index="conferences", id=conference_id, doc=doc),
+        **{"db.elasticsearch.index": "conferences", "conference.schedule_status": status},
+    )
+
+
+def _schedule_lock(conference_id: str) -> asyncio.Lock:
+    # In-process only: with two replicas, confirms for one conference that land on different
+    # pods can still overlap. Stable talk ids make the bulk writes idempotent; only the stale
+    # delete could race, and it is bounded by the confirmed id list of whichever ran last.
+    lock = _schedule_locks.get(conference_id)
+    if lock is None:
+        lock = _schedule_locks[conference_id] = asyncio.Lock()
+    return lock
+
+
+async def index_schedule(conference_id: str, talks: list[dict[str, Any]]) -> None:
+    """Bulk-index every talk, then delete the ones no longer in the schedule.
+
+    The stale delete runs only after every batch succeeded, so a failure never wipes the old
+    schedule. Raises ScheduleIndexError on a rejected batch; ES transport errors surface as the
+    HTTPException(503) that es_call raises.
+    """
+    actions: list[dict[str, Any]] = []
+    for talk in talks:
+        actions.append({"index": {"_index": "talks", "_id": f"{conference_id}:{talk['talk_id']}"}})
+        actions.append(talk)
+    async with _schedule_lock(conference_id):
+        indexed = 0
+        for i in range(0, len(actions), BULK_BATCH_SIZE):
+            batch = actions[i : i + BULK_BATCH_SIZE]
+            resp = await es_call(
+                "confirm_schedule",
+                # semantic_text embeds every talk on write (~3.4 s per 50); 5 s is far too short.
+                lambda batch=batch: es.options(request_timeout=60).bulk(
+                    operations=batch, refresh="wait_for"
+                ),
+                **{"db.elasticsearch.index": "talks", "conference.talk_count": len(batch) // 2},
+            )
+            body = getattr(resp, "body", resp)
+            if body.get("errors"):
+                failed = [
+                    item
+                    for item in body.get("items", [])
+                    if "error" in next(iter(item.values()), {})
+                ]
+                logger.error(
+                    "confirm_schedule_bulk_failed conference_id=%s failed_count=%d first_error=%s",
+                    conference_id,
+                    len(failed),
+                    next(iter(failed[0].values())).get("error") if failed else None,
+                )
+                raise ScheduleIndexError("Some talks could not be stored")
+            indexed += len(batch) // 2
+            await set_schedule_status(conference_id, "indexing", indexed_count=indexed)
+        confirmed_ids = [talk["talk_id"] for talk in talks]
+        removed = await es_call(
+            "remove_stale_talks",
+            lambda: es.delete_by_query(
+                index="talks",
+                query={
+                    "bool": {
+                        "filter": [{"term": {"conference_id": conference_id}}],
+                        "must_not": [{"terms": {"talk_id": confirmed_ids}}],
+                    }
+                },
+                refresh=True,
+                conflicts="proceed",
+            ),
+            **{"db.elasticsearch.index": "talks", "conference.talk_count": len(confirmed_ids)},
+        )
+        logger.info(
+            "confirm_schedule_stale_removed conference_id=%s deleted=%s",
+            conference_id,
+            getattr(removed, "body", removed).get("deleted"),
+        )
+        await set_schedule_status(conference_id, "ready", indexed_count=len(talks), error=None)
+
+
+async def index_schedule_job(conference_id: str, talks: list[dict[str, Any]]) -> None:
+    """Background wrapper: own span, never lets an exception escape unlogged."""
+    with tracer.start_as_current_span("confirm_schedule_background") as span:
+        span.set_attribute("conference.talk_count", len(talks))
+        try:
+            await index_schedule(conference_id, talks)
+            span.set_attribute("conference.schedule_status", "ready")
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            detail = getattr(exc, "detail", None) or str(exc) or type(exc).__name__
+            logger.exception(
+                "confirm_schedule_background_failed conference_id=%s error=%s",
+                conference_id,
+                type(exc).__name__,
+            )
+            try:
+                await set_schedule_status(
+                    conference_id, "failed", error=f"{type(exc).__name__}: {detail}"[:500]
+                )
+            except Exception:
+                logger.exception(
+                    "confirm_schedule_status_write_failed conference_id=%s", conference_id
+                )
