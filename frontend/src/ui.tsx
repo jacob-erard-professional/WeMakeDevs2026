@@ -4,13 +4,13 @@ import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import type { TextInputProps } from 'react-native';
 
 export const colors = {
-  ink: '#112C2A',
-  muted: '#455E59',
-  paper: '#F3F7F1',
+  ink: '#18253B',
+  muted: '#4A5160',
+  paper: '#F8F4E9',
   white: '#FFFFFF',
-  green: '#195848',
-  pale: '#DCEFE4',
-  line: '#B0C4B8',
+  accent: '#973A2A',
+  pale: '#EDE6D5',
+  line: '#AAA28F',
   error: '#922D24',
 };
 
@@ -26,8 +26,8 @@ export function Heading({ children }: PropsWithChildren) {
   return <Text accessibilityRole="header" style={styles.heading}>{children}</Text>;
 }
 
-export function Card({ children }: PropsWithChildren) {
-  return <View style={styles.card}>{children}</View>;
+export function Section({ children }: PropsWithChildren) {
+  return <View style={styles.section}>{children}</View>;
 }
 
 export function Field({ label, multiline, ...props }: TextInputProps & { label: string }) {
@@ -92,22 +92,22 @@ export function Message({ children, error }: PropsWithChildren<{ error?: boolean
 export const styles = StyleSheet.create({
   stack: { gap: 14 },
   row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
-  label: { color: colors.green, fontSize: 14, fontWeight: '700', letterSpacing: 0.7 },
+  label: { color: colors.accent, fontSize: 13, fontWeight: '700', letterSpacing: 1 },
   copy: { color: colors.muted, fontSize: 16, lineHeight: 24 },
   heading: { color: colors.ink, fontSize: 24, fontWeight: '700' },
-  card: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 18, gap: 12 },
+  section: { borderTopWidth: 1, borderColor: colors.line, paddingVertical: 16, gap: 12 },
   field: { gap: 6 },
   fieldLabel: { color: colors.ink, fontWeight: '600', fontSize: 16 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.line, borderRadius: 10, padding: 12, color: colors.ink, backgroundColor: colors.white, fontSize: 16 },
+  input: { minHeight: 48, borderWidth: 1, borderColor: colors.line, padding: 12, color: colors.ink, backgroundColor: colors.white, fontSize: 16 },
   multiline: { minHeight: 96, textAlignVertical: 'top' },
-  button: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.green, borderWidth: 1, borderColor: colors.green, alignSelf: 'flex-start', maxWidth: '100%' },
+  button: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.ink, borderWidth: 1, borderColor: colors.ink, alignSelf: 'flex-start', maxWidth: '100%' },
   buttonText: { color: colors.white, fontWeight: '700', fontSize: 16 },
-  secondary: { backgroundColor: colors.white },
-  secondaryText: { color: colors.green },
+  secondary: { backgroundColor: 'transparent', borderColor: colors.line },
+  secondaryText: { color: colors.ink },
   selected: { backgroundColor: colors.pale },
   selectedText: { textDecorationLine: 'underline' },
   focused: { outlineColor: colors.ink, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
   dimmed: { opacity: 0.72 },
-  message: { fontSize: 16, lineHeight: 22, color: colors.green },
+  message: { fontSize: 16, lineHeight: 22, color: colors.ink },
   error: { color: colors.error },
 });

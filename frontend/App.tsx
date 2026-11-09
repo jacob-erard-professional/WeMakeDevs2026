@@ -1,14 +1,15 @@
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
+import { JoinScanner } from './src/JoinScanner';
 import { Organizer } from './src/Organizer';
 import { ProfileForm } from './src/ProfileForm';
 import { Recommendations } from './src/Recommendations';
-import { Action, Card, colors, Copy, Field, Heading, Label, Message, styles } from './src/ui';
+import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './src/ui';
 
 function JoinConference({ conferences, onJoin }: {
   conferences: Conference[];
@@ -16,26 +17,38 @@ function JoinConference({ conferences, onJoin }: {
 }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [scanning, setScanning] = useState(false);
 
-  function join() {
-    const conference = conferences.find((item) => item.code === code.trim().toLowerCase());
+  function join(value: string) {
+    const conference = conferences.find((item) => item.code === value.trim().toLowerCase());
     if (conference) onJoin(conference);
-    else setError('Enter a valid conference code or join the sample conference below.');
+    else setError('This code doesn’t match a conference in this session. Check the code or try the sample conference.');
+  }
+
+  if (scanning) {
+    return <JoinScanner onClose={() => setScanning(false)} onScan={(value) => {
+      setScanning(false);
+      join(value);
+    }} />;
   }
 
   return (
-    <Card>
-      <Label>FOR ATTENDEES</Label>
+    <Section>
+      <Label>ATTENDEE CHECK-IN</Label>
       <Heading>Join your conference</Heading>
-      <Copy>Enter a code from your organizer or try the sample conference.</Copy>
+      <Copy>Get your schedule and find people to meet.</Copy>
       <Field label="Conference code" autoCapitalize="none" autoCorrect={false} value={code}
-        maxLength={100} onChangeText={(value) => { setCode(value); setError(''); }} onSubmitEditing={join} />
+        maxLength={100} onChangeText={(value) => { setCode(value); setError(''); }} onSubmitEditing={() => join(code)} />
       {error ? <Message error>{error}</Message> : null}
       <View style={styles.row}>
-        <Action title="Join conference" onPress={join} />
+        <Action title="Join conference" onPress={() => join(code)} />
+        {Platform.OS !== 'web' ? <Action title="Scan QR code" onPress={() => setScanning(true)} secondary /> : null}
+      </View>
+      <View style={layout.sample}>
+        <Copy>Just looking around?</Copy>
         <Action title="Join sample conference" onPress={() => onJoin(demoConference)} secondary />
       </View>
-    </Card>
+    </Section>
   );
 }
 
@@ -69,10 +82,15 @@ export default function App() {
       <SafeAreaView style={layout.screen}>
         <StatusBar style="dark" />
         <ScrollView key={screen} keyboardShouldPersistTaps="handled" contentContainerStyle={layout.content}>
-          <View style={layout.hero}>
-            <Text style={layout.eyebrow}>DEMO MODE · LOCAL SESSION</Text>
-            <Text accessibilityRole="header" style={layout.title}>Conference Connections</Text>
-            <Text style={layout.subtitle}>Find talks worth your time and people worth meeting.</Text>
+          <View style={layout.masthead}>
+            <View style={layout.issue}>
+              <Label>FIELD GUIDE</Label>
+              <Label>DEMO SESSION</Label>
+            </View>
+            <Text accessibilityRole="header" style={[layout.title, screen === 'join' && layout.coverTitle]}>
+              Conference Connections
+            </Text>
+            {screen === 'join' ? <Copy>A plan for your day. A reason to say hello.</Copy> : null}
           </View>
           <View style={styles.row}>
             <Action title="Attendee" selected={mode === 'attendee'} onPress={() => setMode('attendee')} secondary />
@@ -103,9 +121,10 @@ export default function App() {
 
 const layout = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  content: { width: '100%', maxWidth: 840, alignSelf: 'center', padding: 18, paddingBottom: 40, gap: 18 },
-  hero: { borderRadius: 22, backgroundColor: colors.ink, paddingHorizontal: 24, paddingVertical: 30, gap: 9 },
-  eyebrow: { color: '#B5DFC9', fontWeight: '700', fontSize: 13, letterSpacing: 1 },
-  title: { color: colors.white, fontSize: 36, fontWeight: '800' },
-  subtitle: { color: '#DCEFE4', fontSize: 17, lineHeight: 25 },
+  content: { width: '100%', maxWidth: 820, alignSelf: 'center', padding: 22, paddingBottom: 48, gap: 24 },
+  masthead: { gap: 10, paddingTop: 12, borderTopWidth: 5, borderTopColor: colors.accent },
+  issue: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 6 },
+  title: { color: colors.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 28, fontWeight: '700' },
+  coverTitle: { fontSize: 44, maxWidth: 550 },
+  sample: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginTop: 14 },
 });

@@ -4,7 +4,7 @@ import { View } from 'react-native';
 
 import { formatTime, parseTime } from './conference';
 import type { Attendee } from './conference';
-import { Action, Card, Copy, Field, Heading, Message, styles } from './ui';
+import { Action, Copy, Field, Heading, Message, Section, styles } from './ui';
 
 const blank: Attendee = {
   name: '', bio: '', interests: '', linkedin: '', resumeName: '',
@@ -69,7 +69,7 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
     <View style={styles.stack}>
       <Heading>Tell us about yourself</Heading>
       <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
-      <Card>
+      <Section>
         <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
         <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
         <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
@@ -92,8 +92,8 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
         <Action title={profile.discoverable ? 'Discovery on' : 'Discovery off'} selected={profile.discoverable}
           onPress={() => update({ discoverable: !profile.discoverable })} secondary />
         <Copy>Discovery controls whether your profile may appear in other attendees’ suggestions. You can browse suggestions either way.</Copy>
-      </Card>
-      <Card>
+      </Section>
+      <Section>
         <Heading>When are you unavailable?</Heading>
         <Copy>Add same-day blocks in Mountain Time using 24-hour HH:MM.</Copy>
         <Field label="Unavailable from" value={start} onChangeText={setStart} placeholder="11:00" maxLength={5} />
@@ -108,7 +108,7 @@ export function ProfileForm({ initial, onSave }: { initial?: Attendee; onSave: (
             </View>
           );
         })}
-      </Card>
+      </Section>
       {error ? <Message error>{error}</Message> : null}
       <Action title="See my recommendations" onPress={save} />
     </View>
