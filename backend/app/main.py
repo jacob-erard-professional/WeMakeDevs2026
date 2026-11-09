@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -35,6 +35,15 @@ from pydantic import BaseModel, Field, HttpUrl
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile as FormUploadFile
 
+from app.resume_parser import (
+    MAX_RESUME_CHARS,
+    ResumeProfile,
+    UnsupportedResumeType,
+    extract_resume_text,
+    is_linkedin_pdf_text,
+    merge_resume_profile,
+    parse_resume,
+)
 from app.schedule_parser import parse_schedule
 from app.schedule_recommendations import best_schedules
 
@@ -281,35 +290,52 @@ class SaveUserData(BaseModel):
     resume_text: str | None = Field(default=None, max_length=50_000)
 
 
-def profile_text(p: SaveUserData) -> str:
-    """Backend-built text behind the `profile` semantic field (spec: vector-matching.md)."""
+def profile_text(p: Mapping[str, Any]) -> str:
+    """Backend-built text behind the `profile` semantic field (spec: vector-matching.md).
+
+    Takes the attendee fields after résumé-derived values filled the empty ones, so the
+    embedding benefits from the parsed headline, skills and working_on too.
+    """
+    interests, skills = p.get("interests") or [], p.get("skills") or []
     parts = [
-        p.headline,
-        p.bio,
-        f"Working on: {p.working_on}" if p.working_on else "",
-        f"Interests: {', '.join(p.interests)}" if p.interests else "",
-        f"Skills: {', '.join(p.skills)}" if p.skills else "",
+        p.get("headline") or "",
+        p.get("bio") or "",
+        f"Working on: {p['working_on']}" if p.get("working_on") else "",
+        f"Interests: {', '.join(interests)}" if interests else "",
+        f"Skills: {', '.join(skills)}" if skills else "",
     ]
     return ". ".join(x for x in parts if x)
 
 
-def extract_resume_text(content: bytes, content_type: str | None, filename: str | None) -> str:
-    """Extract text only; raw resume files are deliberately never persisted in Elasticsearch."""
-    suffix = (filename or "").rsplit(".", 1)[-1].lower()
-    if content_type == "text/plain" or suffix == "txt":
-        return content.decode("utf-8", errors="replace")
-    if content_type == "application/pdf" or suffix == "pdf":
-        from pypdf import PdfReader
+async def read_resume_upload(upload: FormUploadFile) -> str:
+    """Size-check and extract text from an uploaded résumé; the raw bytes go no further."""
+    content = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Resume exceeds 10 MiB")
+    try:
+        text = await run_in_threadpool(
+            extract_resume_text, content, upload.content_type, upload.filename
+        )
+    except UnsupportedResumeType as exc:
+        raise HTTPException(415, str(exc)) from None
+    except Exception as exc:
+        logger.info("resume_text_extraction_failed type=%s", type(exc).__name__)
+        raise HTTPException(422, "The resume could not be read") from exc
+    return text[:MAX_RESUME_CHARS]
 
-        return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
-    if (
-        content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        or suffix == "docx"
-    ):
-        from docx import Document
 
-        return "\n".join(paragraph.text for paragraph in Document(io.BytesIO(content)).paragraphs)
-    raise HTTPException(415, "Resume upload must be TXT, PDF, or DOCX")
+async def parse_resume_traced(text: str) -> ResumeProfile:
+    """LLM + LinkedIn parse off the event loop, in a span that carries counts only."""
+    with tracer.start_as_current_span("parse_resume") as span:
+        span.set_attribute("resume.chars", len(text))
+        span.set_attribute("resume.is_linkedin_pdf", is_linkedin_pdf_text(text))
+        span.set_attribute("resume.llm_configured", bool(os.getenv("OPENAI_API_KEY")))
+        profile = await run_in_threadpool(parse_resume, text)
+        span.set_attribute("resume.skills_count", len(profile.skills))
+        span.set_attribute("resume.interests_count", len(profile.interests))
+        span.set_attribute("resume.has_headline", bool(profile.headline))
+        span.set_attribute("resume.profile_empty", profile.is_empty())
+    return profile
 
 
 class ConnectionRequest(BaseModel):
@@ -691,19 +717,7 @@ async def save_user_data(
         upload = form.get("resume")
         # request.form() yields starlette's UploadFile, not fastapi's subclass.
         if isinstance(upload, FormUploadFile):
-            content = await upload.read(MAX_UPLOAD_BYTES + 1)
-            if len(content) > MAX_UPLOAD_BYTES:
-                raise HTTPException(413, "Resume exceeds 10 MiB")
-            try:
-                uploaded_resume_text = await run_in_threadpool(
-                    extract_resume_text, content, upload.content_type, upload.filename
-                )
-            except HTTPException:
-                raise
-            except Exception as exc:
-                logger.info("resume_text_extraction_failed type=%s", type(exc).__name__)
-                raise HTTPException(422, "The resume could not be read") from exc
-            uploaded_resume_text = uploaded_resume_text[:50_000]
+            uploaded_resume_text = await read_resume_upload(upload)
     else:
         try:
             payload = SaveUserData.model_validate(await request.json())
@@ -726,9 +740,16 @@ async def save_user_data(
             raise HTTPException(
                 422, "Blockout times must be timezone-aware and have end after start"
             )
-    doc = payload.model_dump(mode="json") | {
+    # Parse only résumé text that arrived in this request; stored text was parsed when saved.
+    new_resume_text = uploaded_resume_text or payload.resume_text or ""
+    resume_profile = (
+        await parse_resume_traced(new_resume_text) if new_resume_text.strip() else ResumeProfile()
+    )
+    # Typed values win; the résumé only fills empty fields (skills/interests are unioned).
+    merged = merge_resume_profile(payload.model_dump(mode="json"), resume_profile)
+    doc = merged | {
         "attendee_id": attendee_id,
-        "profile": profile_text(payload),
+        "profile": profile_text(merged),
         "updated_at": datetime.now(UTC).isoformat(),
     }
     if uploaded_resume_text:
@@ -775,10 +796,21 @@ async def save_user_data(
             "schedules": schedules,
             "attendees": people,
         },
+        # What the résumé contributed, so the form can show "We picked up: ..." for editing.
+        # Derived fields only; the raw resume_text is never echoed back.
+        "resume_profile": resume_profile.model_dump(),
     }
     if token:
         result["attendee_token"] = f"{payload.conference_id}:{attendee_id}:{token}"
     return result
+
+
+@app.post("/parse-resume")
+async def parse_resume_preview(resume: UploadFile = File(...)) -> dict[str, Any]:
+    """Preview what a résumé contributes to the profile. Stores nothing; same limits as save."""
+    text = await read_resume_upload(resume)
+    profile = await parse_resume_traced(text) if text.strip() else ResumeProfile()
+    return {"resume_profile": profile.model_dump(), "is_linkedin_pdf": is_linkedin_pdf_text(text)}
 
 
 async def claimed_profile(
