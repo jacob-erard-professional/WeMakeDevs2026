@@ -1,0 +1,20 @@
+# Argo CD deploys this folder from the `deploy` branch, not from main. The build-and-deploy
+# workflow copies main's deploy/ there and pins both images below to the commit it built.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: team-wearedevs
+resources:
+  - deployment.yaml
+  - service.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - httproute.yaml
+images:
+  # Frontend (frontend/Dockerfile): Service app, the public URL.
+  - name: app
+    newName: ghcr.io/jacob-erard-professional/wemakedevs2026-web
+    newTag: latest
+  # Backend (backend/Dockerfile): Service backend, reached at /api/*.
+  - name: backend
+    newName: ghcr.io/jacob-erard-professional/wemakedevs2026
+    newTag: latest

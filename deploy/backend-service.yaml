@@ -1,0 +1,14 @@
+# Cluster-internal only. The frontend's nginx proxies /api/* here as http://backend/.
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

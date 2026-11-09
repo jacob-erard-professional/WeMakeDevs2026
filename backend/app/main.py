@@ -240,19 +240,16 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Conference API", version="0.1.0", lifespan=lifespan)
-_default_cors_origin = "http://localhost:8081"
-_cors_origins = [
-    origin.strip()
-    for origin in os.getenv("CORS_ALLOW_ORIGINS", _default_cors_origin).split(",")
-    if origin.strip()
-]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type", "X-Organizer-Token"],
-)
+# Browser origins allowed to call the API (e.g. Expo web on localhost); empty disables CORS.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Organizer-Token"],
+        allow_credentials=False,
+    )
 FastAPIInstrumentor.instrument_app(app)
 
 

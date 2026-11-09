@@ -6,14 +6,21 @@ import QRCode from 'react-native-qrcode-svg';
 import { confirmLiveSchedule, createLiveConference, parseLiveSchedule } from './api';
 import type { OrganizerSession, ParsedTalk } from './api';
 import { Flow } from './Flow';
+import { joinUrl } from './joinLink';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 type ScheduleAsset = { uri: string; name: string };
 
+const venueTime = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit',
+});
+
+// Parsed schedules come from an LLM, so a timestamp may not be a valid date. Formatting an
+// invalid Date throws RangeError, which would take down the whole review screen.
 function displayTime(timestamp: string) {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit',
-  }).format(new Date(timestamp));
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp.trim() || 'Time TBD';
+  return venueTime.format(date);
 }
 
 export function Organizer() {
@@ -22,7 +29,7 @@ export function Organizer() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [asset, setAsset] = useState<ScheduleAsset>();
   const [draft, setDraft] = useState<{ talks: ParsedTalk[]; warnings: string[] }>();
-  const [published, setPublished] = useState<{ joinUrl: string }>();
+  const [published, setPublished] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -51,25 +58,38 @@ export function Organizer() {
   async function publish() {
     if (!session || !draft?.talks.length) return;
     setBusy(true); setError('');
-    try { setPublished({ joinUrl: (await confirmLiveSchedule(session, draft.talks)).join_url }); }
+    try { await confirmLiveSchedule(session, draft.talks); setPublished(true); }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not publish the schedule.'); }
     finally { setBusy(false); }
   }
 
-  if (published && session) return (
-    <Flow step="published" style={styles.section}>
-      <Label>ATTENDEE ENTRY PASS</Label><Heading large>{session.name}</Heading>
-      <View style={passStyles.pass}>
-        <View accessible accessibilityRole="image" accessibilityLabel={`Conference QR code for ${session.name}`}>
-          <QRCode value={published.joinUrl} size={132} quietZone={28} />
+  function reset() {
+    setPublished(false); setSession(undefined); setDraft(undefined);
+    setAsset(undefined); setSourceUrl(''); setName('');
+  }
+
+  if (published && session) {
+    // The QR encodes the web app's /join/<id> link so a phone camera lands on the join screen.
+    const link = joinUrl(session.conferenceId);
+    return (
+      <Flow step="published" style={styles.section}>
+        <Label>ATTENDEE ENTRY PASS</Label>
+        <Heading large>{session.name}</Heading>
+        <View style={passStyles.pass}>
+          <View accessible accessibilityRole="image" accessibilityLabel={`QR code linking to ${link}`}>
+            <QRCode value={link} size={132} quietZone={28} />
+          </View>
+          <View style={passStyles.details}>
+            <Label>JOIN CODE</Label>
+            <Text selectable style={passStyles.code}>{session.conferenceId}</Text>
+            <Text selectable style={passStyles.link}>{link}</Text>
+            <Copy>Scan with your phone camera to open the join link, or type the code at check-in.</Copy>
+          </View>
         </View>
-        <View style={passStyles.details}>
-          <Label>JOIN LINK</Label><Text selectable style={passStyles.url}>{published.joinUrl}</Text>
-          <Copy>Attendees can scan this QR code or open the link in any browser.</Copy>
-        </View>
-      </View>
-    </Flow>
-  );
+        <Action title="Create another conference" onPress={reset} secondary />
+      </Flow>
+    );
+  }
 
   return (
     <Flow step={session ? 'schedule' : 'create'} style={styles.stack}>
@@ -102,5 +122,6 @@ export function Organizer() {
 const passStyles = StyleSheet.create({
   pass: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 20, rowGap: 12 },
   details: { flexGrow: 1, flexBasis: 185, gap: 6, paddingVertical: 12 },
-  url: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  code: { color: colors.ink, fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  link: { color: colors.muted, fontSize: 13 },
 });

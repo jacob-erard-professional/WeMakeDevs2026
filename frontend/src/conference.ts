@@ -9,12 +9,18 @@ export type Talk = TimeRange & {
 
 export type Conference = { name: string; code: string; talks: Talk[] };
 
+// A picked résumé. expo-document-picker gives a `file` on web and a `uri` on native; the
+// document itself is only ever sent to /save-user-data, which extracts text and discards it.
+export type ResumeAsset = { uri: string; name: string; mimeType?: string; file?: File };
+
 export type Attendee = {
   name: string;
+  email: string;
   bio: string;
   interests: string;
+  lookingFor: string;
   linkedin: string;
-  resumeName: string;
+  resume?: ResumeAsset;
   resumePublic: boolean;
   discoverable: boolean;
   unavailable: TimeRange[];

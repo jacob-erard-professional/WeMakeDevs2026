@@ -6,35 +6,46 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
-import { joinLiveConference } from './src/api';
-import { saveLiveProfile } from './src/api';
+import { joinLiveConference, saveLiveProfile } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
+import { clearJoinPath, joinCodeFromLocation, parseJoinCode } from './src/joinLink';
 import { Organizer } from './src/Organizer';
 import { ProfileForm } from './src/ProfileForm';
 import { Recommendations } from './src/Recommendations';
+import { Landing } from './src/site/Landing';
+import { OrganizersPage } from './src/site/OrganizersPage';
+import { PastEvents } from './src/site/PastEvents';
+import { PastTalks } from './src/site/PastTalks';
+import { useRoute } from './src/site/router';
+import { Container, SiteShell } from './src/site/SiteShell';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './src/ui';
 
 function JoinConference({ conferences, onJoin }: {
   conferences: Conference[];
   onJoin: (conference: Conference) => void;
 }) {
-  const [code, setCode] = useState('');
+  const [linkCode] = useState(joinCodeFromLocation);
+  const [code, setCode] = useState(linkCode ?? '');
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
 
   async function join(value: string) {
-    const conference = conferences.find((item) => item.code === value.trim().toLowerCase());
-    if (conference) onJoin(conference);
-    else {
-      setError('');
-      try {
-        onJoin(await joinLiveConference(value));
-      } catch (reason) {
-        setError(reason instanceof Error ? reason.message : 'Could not join the conference.');
-      }
+    // Accepts a bare conference id or a scanned/pasted /join/<id> link.
+    const parsed = parseJoinCode(value);
+    if (!parsed) { setError('Enter the conference code or scan its QR code.'); return; }
+    setError('');
+    try {
+      const conference = conferences.find((item) => item.code === parsed) ?? await joinLiveConference(parsed);
+      clearJoinPath();
+      onJoin(conference);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not join the conference.');
     }
   }
+
+  // Web: opened via a /join/<code> link (e.g. from the organizer QR), so join right away.
+  useEffect(() => { if (linkCode) join(linkCode); }, []);
 
   return (
     <Flow step={scanning ? 'scanner' : 'code'} style={scanning ? undefined : layout.entry}>
@@ -68,22 +79,14 @@ function JoinConference({ conferences, onJoin }: {
 }
 
 export default function App() {
-  const [conferences, setConferences] = useState([demoConference]);
-  const [mode, setMode] = useState<'attendee' | 'organizer'>('attendee');
+  const conferences = [demoConference];
+  const { page, navigate } = useRoute();
   const [conference, setConference] = useState<Conference>();
   const [profile, setProfile] = useState<Attendee>();
   const [editing, setEditing] = useState(false);
   const [requested, setRequested] = useState<string[]>([]);
   const [attendeeToken, setAttendeeToken] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-
-  function publish(name: string, talks: Conference['talks']) {
-    const code = `event-${conferences.length}`;
-    const event = { name, talks, code };
-    setConferences((items) => [...items, event]);
-    scrollToTop();
-    return event;
-  }
 
   function changeConference(next?: Conference) {
     setConference(next);
@@ -93,7 +96,8 @@ export default function App() {
     setAttendeeToken(undefined);
   }
 
-  const screen = mode === 'organizer' ? 'organizer'
+  // Public site pages come from the URL; /join and /join/<code> show the attendee flow.
+  const screen = page !== 'join' ? page
     : !conference ? 'join' : !profile || editing ? 'profile' : 'plan';
 
   function scrollToTop() {
@@ -114,20 +118,18 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <SafeAreaView style={layout.screen}>
-        <StatusBar style="dark" />
-        <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={layout.content}>
-          <View style={layout.masthead}>
-            <Text style={layout.title}>Conference Connections</Text>
-            <View style={styles.row}>
-              <Action title="Attendee" selected={mode === 'attendee'} onPress={() => setMode('attendee')} secondary />
-              <Action title="Organizer" selected={mode === 'organizer'} onPress={() => setMode('organizer')} secondary />
-            </View>
-          </View>
-          <MotionPreferences>
+        <StatusBar style="light" />
+        <MotionPreferences>
+          <SiteShell page={page} navigate={navigate} scrollRef={scroll}>
             <Flow step={screen}>
-              {mode === 'organizer' ? <Organizer /> : !conference ? (
-                <JoinConference conferences={conferences} onJoin={changeConference} />
+              {page === 'home' ? <Landing navigate={navigate} /> : page === 'events' ? <PastEvents /> : page === 'talks' ? <PastTalks />
+              : page === 'organizers' ? <OrganizersPage><Organizer /></OrganizersPage>
+              : !conference ? (
+                <Container style={layout.content}>
+                  <JoinConference conferences={conferences} onJoin={changeConference} />
+                </Container>
               ) : (
+                <Container style={layout.content}>
                 <View style={styles.stack}>
                   <View style={styles.row}>
                     <Label>{conference.name}</Label>
@@ -141,11 +143,11 @@ export default function App() {
                       onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
                   )}
                 </View>
+                </Container>
               )}
             </Flow>
-          </MotionPreferences>
-          <Text style={layout.footer}>Demo session</Text>
-        </ScrollView>
+          </SiteShell>
+        </MotionPreferences>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -153,12 +155,9 @@ export default function App() {
 
 const layout = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  content: { width: '100%', maxWidth: 920, alignSelf: 'center', padding: 24, paddingBottom: 48, gap: 34 },
-  masthead: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', columnGap: 24 },
-  title: { color: colors.ink, fontSize: 19, fontWeight: '700', letterSpacing: -0.5 },
+  content: { maxWidth: 920, paddingVertical: 48, gap: 34 },
   entry: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', columnGap: 64, rowGap: 32 },
   intro: { flexBasis: 360, flexGrow: 1, flexShrink: 1, maxWidth: 440, gap: 12 },
   coverTitle: { color: colors.ink, fontSize: 58, fontWeight: '700', letterSpacing: -3.5 },
   checkIn: { flexBasis: 270, flexGrow: 1, flexShrink: 1, maxWidth: 380 },
-  footer: { color: colors.muted, fontSize: 13 },
 });

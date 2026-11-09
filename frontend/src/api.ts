@@ -1,6 +1,7 @@
-import type { Attendee, Conference, Talk } from './conference';
+import { Platform } from 'react-native';
 
-const apiBase = (process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');
+import { API_BASE_URL as apiBase } from './apiBase';
+import type { Attendee, Conference, ResumeAsset, Talk } from './conference';
 
 type JoinResponse = {
   conference_id: string;
@@ -29,21 +30,8 @@ function venueMinutes(timestamp: string) {
   return value('hour') * 60 + value('minute');
 }
 
-function conferenceId(value: string) {
-  const trimmed = value.trim();
-  try {
-    const url = new URL(trimmed);
-    const match = /^\/join\/([^/]+)$/.exec(url.pathname);
-    if (match) return decodeURIComponent(match[1]);
-  } catch {
-    // A typed conference code is expected to be an ID, not a URL.
-  }
-  return trimmed;
-}
-
-export async function joinLiveConference(value: string): Promise<Conference> {
-  const id = conferenceId(value);
-  if (!id) throw new Error('Enter the conference code or scan its QR code.');
+// `id` is a bare conference id; callers normalize join links with parseJoinCode first.
+export async function joinLiveConference(id: string): Promise<Conference> {
   const response = await fetch(`${apiBase}/join/${encodeURIComponent(id)}`);
   if (!response.ok) {
     throw new Error(response.status === 404 ? 'That conference is not available yet.' : 'Could not reach the conference server.');
@@ -60,30 +48,46 @@ export async function joinLiveConference(value: string): Promise<Conference> {
   return { name: data.name, code: data.conference_id, talks };
 }
 
+async function resumePart(resume: ResumeAsset): Promise<Blob | { uri: string; name: string; type: string }> {
+  const type = resume.mimeType || 'application/pdf';
+  if (Platform.OS !== 'web') return { uri: resume.uri, name: resume.name, type };
+  // Web: the picker hands over the File directly; fall back to reading the blob: URI.
+  return resume.file ?? new Blob([await (await fetch(resume.uri)).arrayBuffer()], { type });
+}
+
 export async function saveLiveProfile(
   conference: Conference,
   profile: Attendee,
   attendeeToken?: string,
 ) {
+  const payload = {
+    conference_id: conference.code,
+    name: profile.name,
+    email: profile.email.trim() || undefined,
+    bio: profile.bio,
+    interests: profile.interests.split(',').map((item) => item.trim()).filter(Boolean),
+    looking_for: profile.lookingFor.trim(),
+    linkedin_url: profile.linkedin || undefined,
+    discovery_opt_in: profile.discoverable,
+    // Time ranges are currently entered as clock times without a date/time zone. They remain
+    // local until the UI collects timezone-aware timestamps for the API.
+    blockout_times: [],
+  };
+  // /save-user-data takes multipart with a JSON `profile` field plus an optional `resume` file.
+  // Let fetch set Content-Type so the multipart boundary is included.
+  const body = new FormData();
+  body.append('profile', JSON.stringify(payload));
+  if (profile.resume) {
+    const part = await resumePart(profile.resume);
+    if (part instanceof Blob) body.append('resume', part, profile.resume.name);
+    else body.append('resume', part as unknown as Blob);
+  }
   const response = await fetch(`${apiBase}/save-user-data`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(attendeeToken ? { Authorization: `Bearer ${attendeeToken}` } : {}),
-    },
-    body: JSON.stringify({
-      conference_id: conference.code,
-      name: profile.name,
-      bio: profile.bio,
-      interests: profile.interests.split(',').map((item) => item.trim()).filter(Boolean),
-      linkedin_url: profile.linkedin || undefined,
-      discovery_opt_in: profile.discoverable,
-      // Time ranges are currently entered as clock times without a date/time zone. They remain
-      // local until the UI collects timezone-aware timestamps for the API.
-      blockout_times: [],
-    }),
+    headers: attendeeToken ? { Authorization: `Bearer ${attendeeToken}` } : undefined,
+    body,
   });
-  if (!response.ok) throw new Error('Could not save your profile to the conference server.');
+  if (!response.ok) throw await apiError(response, 'Could not save your profile to the conference server.');
   return response.json() as Promise<{ attendee_token?: string }>;
 }
 

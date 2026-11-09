@@ -22,6 +22,11 @@ export function MotionPreferences({ children }: PropsWithChildren) {
   return <ReduceMotion.Provider value={reduceMotion}>{children}</ReduceMotion.Provider>;
 }
 
+// True when the device or browser asks for reduced motion (and before the preference is known).
+export function useReduceMotion(): boolean {
+  return useContext(ReduceMotion);
+}
+
 export function Flow({ step, style, children }: PropsWithChildren<{
   step: string;
   style?: StyleProp<ViewStyle>;

@@ -12,6 +12,12 @@ export const colors = {
   pale: '#EEEBF9',
   line: '#8B849E',
   error: '#922D24',
+  // Dark site surfaces (landing hero, nav).
+  night: '#0F0F1A',
+  nightSoft: '#1C1B2E',
+  glow: '#B9ADFF',
+  onNight: '#F4F2FF',
+  onNightMuted: '#C9C5DE',
 };
 
 export function Label({ children }: PropsWithChildren) {
