@@ -1,12 +1,8 @@
-# Vector matching spec: people, talks and the archive
+# Vector matching: people, talks and the archive
 
-Spec for the backend (`backend/app/main.py` on the `backend` branch). Everything below was run against the shared Elastic Cloud project on 2026-11-09 using throwaway indices and fake attendees; results are in [Test results](#test-results). Connection details are in [elasticsearch-connection.md](elasticsearch-connection.md).
+How `backend/app/main.py` and `backend/app/matching.py` rank talks and people. Everything below runs against the shared Elastic Cloud Serverless project (connection details in [elasticsearch-connection.md](elasticsearch-connection.md)) and was verified there with throwaway conference ids on 2026-11-09.
 
-All text fields are embedded with the same model, `.jina-embeddings-v5-text-small` (Elastic-hosted, always on, no cold start). Because people and talks live in **one vector space**, a person's profile can query talks, and a talk's abstract can query people.
-
-## What this replaces
-
-Today `recommend_talks` returns every talk in the conference (filter only, then drops blockout overlaps in Python), and `recommend_attendees` returns any opted-in attendee (filter only). Nothing is ranked by relevance. The queries below rank them.
+All text fields are embedded with one model, `.jina-embeddings-v5-text-small` (Elastic-hosted, always on). People and talks share one vector space, so a profile can query talks and a talk can query people.
 
 ## Indices
 
@@ -14,199 +10,94 @@ Today `recommend_talks` returns every talk in the conference (filter only, then 
 |---|---|---|
 | `attendees` | backend | one doc per attendee per conference, `_id` = `{conference_id}:{attendee_id}` |
 | `talks` | backend | the confirmed live schedule, `_id` = `{conference_id}:{talk_id}` |
-| `talks-archive` | read-only | 24,691 past KubeCon + PyVideo talks (alias of `talks-jina`). Don't write to it. |
+| `talks-archive` | read-only | 24,691 past KubeCon + PyVideo talks (alias of `talks-jina`). Never written. |
 
-Create `attendees` and `talks` with these mappings at startup if they don't exist (`es.indices.exists` → `es.indices.create`). Don't let the first write create them with dynamic mapping: you'd get no vectors and no strict checking. On Serverless don't pass shard, replica or refresh settings.
+`attendees` and `talks` are created at startup (`ensure_indices`, retried in the background) with the strict mappings in `matching.py`; every write path calls `ensure_indices_ready()` and returns 503 until they exist, so a write can never create an index with dynamic mapping. No shard, replica or refresh settings (Serverless rejects them).
 
-### `attendees`
+### `attendees` (`ATTENDEES_INDEX`, `dynamic: strict`)
 
-```python
-ATTENDEES = {
-    "settings": {"analysis": {"normalizer": {"lower": {"type": "custom", "filter": ["lowercase", "asciifolding"]}}}},
-    "mappings": {
-        "dynamic": "strict",
-        "properties": {
-            "conference_id": {"type": "keyword"},
-            "attendee_id": {"type": "keyword"},
-            "name": {"type": "text"},
-            "headline": {"type": "text"},            # e.g. "SRE at a fintech"
-            "bio": {"type": "text"},
-            "interests": {"type": "keyword", "normalizer": "lower"},
-            "skills": {"type": "keyword", "normalizer": "lower"},
-            "working_on": {"type": "text"},
-            "profile": {"type": "semantic_text", "inference_id": ".jina-embeddings-v5-text-small"},
-            "looking_for": {"type": "semantic_text", "inference_id": ".jina-embeddings-v5-text-small"},
-            "can_help_with": {"type": "semantic_text", "inference_id": ".jina-embeddings-v5-text-small"},
-            "resume_text": {"type": "semantic_text", "inference_id": ".jina-embeddings-v5-text-small"},
-            "discovery_opt_in": {"type": "boolean"},
-            "blockout_times": {"properties": {"start_time": {"type": "date"}, "end_time": {"type": "date"}}},
-            "email": {"type": "keyword", "index": False},        # disclosed only via accept-connection
-            "linkedin_url": {"type": "keyword", "index": False},
-            "access_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
-            "updated_at": {"type": "date"},
-        },
-    },
-}
-```
+| Field | Type | Notes |
+|---|---|---|
+| `conference_id`, `attendee_id` | keyword | |
+| `name`, `bio` | text | |
+| `interests` | keyword, `lower` normalizer | list, or the frontend's comma-separated string |
+| `profile` | semantic_text (Jina) | **built by the backend**: `bio. Interests: a, b` |
+| `resume_text` | semantic_text (Jina) | text extracted from the uploaded PDF/DOCX/TXT (`pypdf`, `python-docx`); the file itself is never stored |
+| `resume_public` | boolean | stored; disclosure still only via `/accept-connection` |
+| `discovery_opt_in` | boolean | |
+| `blockout_times` | `{start_time, end_time}` date | |
+| `email`, `linkedin_url` | keyword, `index: false` | disclosed only via `/accept-connection` |
+| `access_token_sha256` | keyword, `index: false`, `doc_values: false` | SHA-256 of the attendee token, compared with `hmac.compare_digest` |
+| `updated_at` | date | |
 
-New profile fields for the API and `ProfileForm.tsx`: `headline`, `interests`, `skills`, `working_on`, `looking_for` ("I'm looking for…"), `can_help_with` ("I can help with…"). All optional; matching gets better the more people fill in.
+These are exactly the fields the frontend sends (`frontend/src/conference.ts`) plus what the backend derives. Empty strings, empty lists and nulls are dropped before indexing (`semantic_text` rejects empty input).
 
-`profile` is **built by the backend**, not sent by the client:
+### `talks` (`TALKS_INDEX`, `dynamic: strict`)
 
-```python
-def profile_text(p) -> str:
-    parts = [p.headline, p.bio,
-             f"Working on: {p.working_on}" if p.working_on else "",
-             f"Interests: {', '.join(p.interests)}" if p.interests else "",
-             f"Skills: {', '.join(p.skills)}" if p.skills else ""]
-    return ". ".join(x for x in parts if x)
-```
+`conference_id`, `talk_id`, `speakers`, `room`, `track` (keyword); `title`, `abstract` (text); `start_time`, `end_time` (date); `confirmed` (boolean); `semantic_content` (semantic_text, `title\n\nabstract`). `confirm_schedule` projects parser output onto this set and drops anything else.
 
-`resume_text`: extract text from the uploaded PDF/DOCX/TXT in the backend (e.g. `pypdf`, `python-docx`) and store only the text. Don't store the file as base64 in Elasticsearch (`resume_asset` today): it bloats every attendee doc and every read.
+**Write latency:** `semantic_text` embeds on write. Attendee and schedule writes use a 60 s client timeout (`es_writer`) and `refresh="wait_for"` so the next request already sees them.
 
-`access_token_sha256`: store `hashlib.sha256(token.encode()).hexdigest()` and compare with `hmac.compare_digest`. Today the raw `access_token` sits in the attendee doc. It's in `_source`, so any query that returns `_source` returns it.
+## Privacy rules (enforced in code)
 
-### `talks`
+1. Every query on `attendees` sets `_source` to `SAFE_SOURCE = attendee_id, name`. Another attendee's `bio`, `resume_text`, `email` and `linkedin_url` are never returned by a recommendation; `/accept-connection` is the only disclosure path.
+2. Highlight only `profile`. Never `resume_text`: highlights return the matching passage verbatim.
+3. Candidates are always: same `conference_id`, `discovery_opt_in: true`, not the requester (`eligible()`).
+4. No profile, bio or resume text in logs or span attributes; spans carry counts (`match.candidates`, `match.top_score`, `match.blockouts`).
 
-```python
-TALKS = {
-    "mappings": {
-        "dynamic": "strict",
-        "properties": {
-            "conference_id": {"type": "keyword"},
-            "talk_id": {"type": "keyword"},
-            "title": {"type": "text"},
-            "abstract": {"type": "text"},
-            "speakers": {"type": "keyword"},
-            "room": {"type": "keyword"},
-            "track": {"type": "keyword"},
-            "start_time": {"type": "date"},
-            "end_time": {"type": "date"},
-            "confirmed": {"type": "boolean"},
-            "semantic_content": {"type": "semantic_text", "inference_id": ".jina-embeddings-v5-text-small"},
-        },
-    },
-}
-```
+## Queries (`backend/app/matching.py`)
 
-In `confirm_schedule`, set `semantic_content = f"{title}\n\n{abstract}"` on each talk before the bulk. With `dynamic: strict`, any extra key the schedule parser emits is rejected, so either add it to the mapping or drop it before indexing.
+### Q1. Similar people: `similar_people_query`
 
-**Write latency:** `semantic_text` embeds on write, so indexing an attendee or a schedule takes about a second longer. Keep `refresh="wait_for"` where the response needs to include the new doc.
+`linear` retriever, `normalizer: minmax`, `rank_window_size: 50`, over:
 
-## Privacy rules (enforce in code)
+| Retriever | Weight |
+|---|---|
+| `semantic(profile, my_profile)` | 0.6 |
+| `semantic(resume_text, my_resume_text)`, only when I uploaded a resume | 0.25 |
+| `terms(interests, my_interests)`, only when non-empty | 0.15 |
 
-1. **Every query on `attendees` sets `_source` explicitly** to `attendee_id`, `name`, `headline`. Tested: without it, `resume_text` comes back in `_source`. Never return `bio`, `resume_text`, `looking_for` or `can_help_with` of *another* attendee except through the highlight rules below and the accept-connection flow.
-2. Highlight only `profile` and `can_help_with`. **Never highlight `resume_text`**: highlights return the matching passage verbatim.
-3. Eligible candidates are always: same `conference_id`, `discovery_opt_in: true`, not the requester.
-4. No profile, bio or resume text in logs or span attributes. Put counts and IDs on spans (`match.candidates`, `match.top_score`).
+Weights of skipped retrievers are redistributed proportionally (no resume: 0.8 / 0.2). One retriever left: plain `query`. Nothing to match on: no search. `linear` rather than RRF because RRF only sees ranks, so two people who each share one interest tie no matter how close their profiles are.
 
-## Queries
+Each hit returns `{attendee_id, name, score, why}`; `why` is `highlight.profile[0]`, the passage of *their* profile that matched.
 
-Shared helpers:
+### Q3. Talk recommendations: `recommend_talks_query`
 
-```python
-SAFE_SOURCE = {"includes": ["attendee_id", "name", "headline"]}
-JINA = ".jina-embeddings-v5-text-small"
+`semantic(semantic_content, my_profile)` filtered to `conference_id` and `confirmed: true`. Blockouts are excluded **in Elasticsearch**, one `must_not` clause per blockout (a talk overlaps when `start_time < blockout.end` and `end_time > blockout.start`). Empty profile: no `must`, sorted by `start_time`. Source: `talk_id, title, abstract, speakers, room, track, start_time, end_time` plus `score`.
 
-def eligible(conference_id: str, me: str) -> dict:
-    return {"filter": [{"term": {"conference_id": conference_id}}, {"term": {"discovery_opt_in": True}}],
-            "must_not": [{"term": {"attendee_id": me}}]}
+### Q4. Who would enjoy this talk: `talk_audience_query`
 
-def semantic(field: str, text: str, conference_id: str, me: str) -> dict:
-    return {"bool": {"must": [{"semantic": {"field": field, "query": text}}], **eligible(conference_id, me)}}
-```
+`GET /conferences/{conference_id}/talks/{talk_id}/audience`, organizer key only. `semantic(profile, "title. abstract")` over opted-in attendees of the conference; returns `count` and safe people.
 
-### Q1. Similar people
+### Q5. Past talks like this one: `similar_past_talks_query`
 
-Hybrid: profile meaning + resume meaning + shared skills/interests, merged with RRF.
-
-```python
-es.search(index="attendees", size=10, source=SAFE_SOURCE,
-    retriever={"rrf": {"rank_window_size": 50, "retrievers": [
-        {"standard": {"query": semantic("profile", my_profile, cid, me)}},
-        {"standard": {"query": semantic("resume_text", my_profile, cid, me)}},
-        {"standard": {"query": {"bool": {"should": [{"terms": {"skills": my_skills}}, {"terms": {"interests": my_interests}}],
-                                         "minimum_should_match": 1, **eligible(cid, me)}}}},
-    ]}},
-    highlight={"fields": {"profile": {"type": "semantic", "number_of_fragments": 1}}})
-```
-
-If the person has no skills or interests, drop the third retriever (an empty `terms` list is an error). Each hit's `highlight.profile[0]` is the passage of *their* profile that best matched: show it as "Why: …".
-
-### Q2. Two-sided matchmaking ("you two should meet")
-
-Who can help with what I'm looking for (weight 0.7), plus who is looking for what I can help with (0.3). Use `linear` with `minmax`, not RRF. Tested: RRF only looks at ranks and put the wrong person first. `linear` scored the right match 0.74 vs 0.49 for the next one.
-
-```python
-es.search(index="attendees", size=10, source=SAFE_SOURCE,
-    retriever={"linear": {"rank_window_size": 50, "normalizer": "minmax", "retrievers": [
-        {"retriever": {"standard": {"query": semantic("can_help_with", my_looking_for, cid, me)}}, "weight": 0.7},
-        {"retriever": {"standard": {"query": semantic("looking_for", my_can_help_with, cid, me)}}, "weight": 0.3},
-    ]}},
-    highlight={"fields": {"can_help_with": {"type": "semantic", "number_of_fragments": 1}}})
-```
-
-Skip whichever retriever's input is empty. `highlight.can_help_with[0]` is what they can help with: "Ben can help with: OpenTelemetry instrumentation and collector pipelines".
-
-### Q3. Talk recommendations for a person
-
-The attendee's profile (plus what they're looking for) queries the schedule. Blockouts are excluded **in Elasticsearch**, one `must_not` clause per blockout (a talk overlaps when it starts before the blockout ends and ends after it starts), which replaces the Python loop.
-
-```python
-es.search(index="talks", size=20, source=["talk_id", "title", "room", "start_time", "end_time"],
-    query={"bool": {
-        "must": [{"semantic": {"field": "semantic_content", "query": f"{my_profile} {my_looking_for}"}}],
-        "filter": [{"term": {"conference_id": cid}}, {"term": {"confirmed": True}}],
-        "must_not": [{"bool": {"filter": [{"range": {"start_time": {"lt": b.end_time.isoformat()}}},
-                                          {"range": {"end_time": {"gt": b.start_time.isoformat()}}}]}}
-                     for b in blockouts]}})
-```
-
-With an empty profile, fall back to sorting by `start_time` (no `must`).
-
-### Q4. Who would enjoy this talk (organizers and speakers)
-
-```python
-es.search(index="attendees", size=10, source=SAFE_SOURCE,
-    query={"bool": {"must": [{"semantic": {"field": "profile", "query": f"{talk['title']}. {talk['abstract']}"}}],
-                    "filter": [{"term": {"conference_id": cid}}, {"term": {"discovery_opt_in": True}}]}})
-```
-
-Show organizers only counts or opted-in names, per the discovery rules.
-
-### Q5. Past talks like this one (archive)
-
-"Liked this session? Watch these recordings." `video_url` is set for PyVideo talks.
-
-```python
-es.search(index="talks-archive", size=5, source=["title", "conference", "year", "url", "video_url"],
-    query={"semantic": {"field": "semantic_content", "query": f"{talk['title']}. {talk['abstract']}"}})
-```
+`GET /conferences/{conference_id}/talks/{talk_id}/similar-past`, attendee token for that conference or organizer key. `semantic(semantic_content, "title. abstract")` on `talks-archive`, source `title, conference, year, url, video_url`. `video_url` is set for PyVideo talks.
 
 ### Optional: reranking
 
-Wrap any `retriever` in `text_similarity_reranker` with `inference_id: ".jina-reranker-v3.5"` for sharper top results (+~1 s). Its `rank_window_size` must be ≤ the inner retriever's. Example in elasticsearch-connection.md.
+Wrap a retriever in `text_similarity_reranker` with `inference_id: ".jina-reranker-v3.5"` (+~1 s). Example in elasticsearch-connection.md.
 
-## Endpoints affected
+## Endpoints
 
-| Endpoint | Change |
+| Endpoint | Behavior |
 |---|---|
-| `/save-user-data` | accept the new profile fields; build `profile`; extract `resume_text`; hash the token; return Q3 talks and Q1/Q2 people |
-| `/confirm-schedule` | set `semantic_content`; ensure `talks` exists with the mapping |
-| new `GET` recommend endpoints | the frontend's `frontend/docs/integration.md` expects `GET /conferences/{id}/talks/recommend?profile_id=…`; agree on one contract between frontend and backend |
-| `/accept-connection` | unchanged: still the only path that discloses `resume_text` |
+| `POST /save-user-data` | accepts `interests`, `resume_public` and a PDF/DOCX/TXT `resume` upload; builds `profile`; extracts `resume_text`; hashes the token; returns Q3 `recommendations.talks` and Q1 `recommendations.attendees` |
+| `POST /confirm-schedule` | strict `talks` docs with `semantic_content`; stale talks of the conference pruned after the bulk |
+| `GET /conferences/{id}/talks/{talk_id}/audience` | Q4 |
+| `GET /conferences/{id}/talks/{talk_id}/similar-past` | Q5 |
+| `POST /accept-connection` | unchanged: the only path that discloses `resume_text`, `email`, `linkedin_url` |
 
 ## Test results
 
-Five fake attendees plus one opted-out, five talks, run on the cloud project:
+Six fake attendees (one opted out, one with a resume), five talks, on the cloud project:
 
 | Query | Input | Top results | Check |
 |---|---|---|---|
-| Q1 similar people | Ana (SRE, OpenTelemetry, Kubernetes) | Ben (OTel maintainer), Dee, Chen, Eve | Ana and opted-out Fay excluded ✅ |
-| Q2 two-sided | Ana looks for "OpenTelemetry tracing advice" | Ben 0.74, Chen 0.49, Eve 0.14 | highlight: "OpenTelemetry instrumentation and collector pipelines" ✅ |
-| Q3 talk recs | Ana, blockout 19:45–20:15 | OTel tracing, Kubernetes bill, GitOps, eBPF | postmortems talk (20:00) excluded ✅ |
-| Q4 reverse | eBPF runtime security talk | Chen 0.91, Ana 0.69, Ben 0.67 | ✅ |
-| Q5 archive | same talk | "From Observability to Enforcement…", "eBPF + Wasm…", "Hacking GPU Observability: eBPF…" | ✅ |
-| strict mapping | unknown field | `400 strict_dynamic_mapping_exception` | ✅ |
-| keyword case | `skills: "Kubernetes"` vs stored `kubernetes` | 2 hits with the `lower` normalizer (0 without) | ✅ |
-| `_source` leak | default `_source` | contains `resume_text` | ⚠️ why rule 1 exists |
+| Q1 | Ana (SRE, OpenTelemetry, Kubernetes), no resume | Ben 1.00, Dee 0.87, Eve 0.00, Chen 0.00 | Ana and opted-out Fay excluded; `why` fragments present; no ties |
+| Q1 | Ana with a resume (all three retrievers) | Ben 1.00, Dee 0.64, Eve 0.00, Chen 0.00 | |
+| Q3 | Ana, blockout 19:45–20:15 | OTel tracing 0.79, Kubernetes bill 0.75, GitOps 0.73, eBPF 0.67 | postmortems talk (20:00) excluded in ES |
+| Q3 | empty profile | 5 talks in `start_time` order | fallback |
+| Q4 | eBPF runtime security talk | Chen 0.86, Ben 0.69, Ana 0.67 | 401 without organizer key |
+| Q5 | same talk | "From Observability to Enforcement…", "eBPF + Wasm…", "Seccomp and eBPF…" | 401 without auth |
+| privacy | all recommendation responses | no `resume_text`, token, email, linkedin or bio | resume text appeared only in `/accept-connection` with `share_resume` |
+| strict mapping | unknown parser key on a talk | dropped before indexing | |

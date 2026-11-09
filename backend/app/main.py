@@ -30,9 +30,22 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile as FormUploadFile
+
+from app.matching import (
+    ATTENDEES_INDEX,
+    TALKS_INDEX,
+    extract_resume_text,
+    person_hit,
+    profile_text,
+    recommend_talks_query,
+    similar_past_talks_query,
+    similar_people_query,
+    split_interests,
+    talk_audience_query,
+)
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("conference_api")
@@ -45,11 +58,14 @@ ORGANIZER_API_KEY = os.getenv("ORGANIZER_API_KEY", "")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 # Even on purpose: bulk payloads are [action, document] pairs and a batch must never split one.
 BULK_BATCH_SIZE = 500
+# semantic_text embeds on write: attendee and schedule writes take seconds, not milliseconds.
+SEMANTIC_WRITE_TIMEOUT = 60
 es = (
-    Elasticsearch(ES_URL, api_key=ES_API_KEY, request_timeout=5)
+    Elasticsearch(ES_URL, api_key=ES_API_KEY, request_timeout=10)
     if ES_API_KEY
-    else Elasticsearch(ES_URL, request_timeout=5)
+    else Elasticsearch(ES_URL, request_timeout=10)
 )
+es_writer = es.options(request_timeout=SEMANTIC_WRITE_TIMEOUT)
 
 
 # --- OpenTelemetry -----------------------------------------------------------------------------
@@ -81,64 +97,17 @@ tracer = trace.get_tracer("conference_api")
 
 # --- Elasticsearch indices -------------------------------------------------------------------
 
-JINA = ".jina-embeddings-v5-text-small"
 _ID = {"type": "keyword"}
 _DATE = {"type": "date"}
 _TEXT = {"type": "text"}
 _BOOL = {"type": "boolean"}
-_SEMANTIC = {"type": "semantic_text", "inference_id": JINA}
 
-# Index bodies from backend/docs/vector-matching.md. Serverless rejects shard/replica/refresh
-# settings, so only the analysis block is passed. `talks-archive` is read-only and not ours.
+# `talks` and `attendees` (strict, semantic_text) live in app.matching next to their queries.
+# Serverless rejects shard/replica/refresh settings, so only the analysis block is passed.
+# `talks-archive` is read-only and not ours.
 INDEX_BODIES: dict[str, dict[str, Any]] = {
-    "talks": {
-        "mappings": {
-            "dynamic": "strict",
-            "properties": {
-                "conference_id": _ID,
-                "talk_id": _ID,
-                "title": _TEXT,
-                "abstract": _TEXT,
-                "speakers": _ID,
-                "room": _ID,
-                "track": _ID,
-                "start_time": _DATE,
-                "end_time": _DATE,
-                "confirmed": _BOOL,
-                "semantic_content": _SEMANTIC,
-            },
-        },
-    },
-    "attendees": {
-        "settings": {
-            "analysis": {
-                "normalizer": {"lower": {"type": "custom", "filter": ["lowercase", "asciifolding"]}}
-            }
-        },
-        "mappings": {
-            "dynamic": "strict",
-            "properties": {
-                "conference_id": _ID,
-                "attendee_id": _ID,
-                "name": _TEXT,
-                "headline": _TEXT,
-                "bio": _TEXT,
-                "interests": {"type": "keyword", "normalizer": "lower"},
-                "skills": {"type": "keyword", "normalizer": "lower"},
-                "working_on": _TEXT,
-                "profile": _SEMANTIC,
-                "looking_for": _SEMANTIC,
-                "can_help_with": _SEMANTIC,
-                "resume_text": _SEMANTIC,
-                "discovery_opt_in": _BOOL,
-                "blockout_times": {"properties": {"start_time": _DATE, "end_time": _DATE}},
-                "email": {"type": "keyword", "index": False},
-                "linkedin_url": {"type": "keyword", "index": False},
-                "access_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
-                "updated_at": _DATE,
-            },
-        },
-    },
+    "talks": TALKS_INDEX,
+    "attendees": ATTENDEES_INDEX,
     "connections": {
         "mappings": {
             "dynamic": True,
@@ -239,30 +208,20 @@ class Blockout(BaseModel):
 class SaveUserData(BaseModel):
     conference_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=160)
-    headline: str = Field(default="", max_length=300)
     email: str | None = Field(default=None, max_length=320)
     linkedin_url: HttpUrl | None = None
     bio: str = Field(default="", max_length=10_000)
+    # A list, or the frontend's comma-separated string ("ebpf, kubernetes").
     interests: list[str] = Field(default_factory=list, max_length=50)
-    skills: list[str] = Field(default_factory=list, max_length=50)
-    working_on: str = Field(default="", max_length=2_000)
-    looking_for: str = Field(default="", max_length=2_000)
-    can_help_with: str = Field(default="", max_length=2_000)
     blockout_times: list[Blockout] = Field(default_factory=list, max_length=100)
     discovery_opt_in: bool = False
     resume_text: str | None = Field(default=None, max_length=50_000)
+    resume_public: bool = False
 
-
-def profile_text(p: SaveUserData) -> str:
-    """Backend-built text behind the `profile` semantic field (spec: vector-matching.md)."""
-    parts = [
-        p.headline,
-        p.bio,
-        f"Working on: {p.working_on}" if p.working_on else "",
-        f"Interests: {', '.join(p.interests)}" if p.interests else "",
-        f"Skills: {', '.join(p.skills)}" if p.skills else "",
-    ]
-    return ". ".join(x for x in parts if x)
+    @field_validator("interests", mode="before")
+    @classmethod
+    def _split_interests(cls, value: Any) -> list[str]:
+        return split_interests(value)
 
 
 class ConnectionRequest(BaseModel):
@@ -337,6 +296,23 @@ async def attendee_claim(
     return conference_id, attendee_id
 
 
+async def require_conference_access(
+    conference_id: str,
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+    x_organizer_key: str | None = Header(default=None),
+) -> None:
+    """An attendee token for this conference, or the organizer key."""
+    if identity and identity[0] == conference_id:
+        return
+    if (
+        ORGANIZER_API_KEY
+        and x_organizer_key
+        and secrets.compare_digest(x_organizer_key, ORGANIZER_API_KEY)
+    ):
+        return
+    raise HTTPException(401, "Valid attendee token for this conference or organizer key required")
+
+
 def require_organizer(x_organizer_key: str | None = Header(default=None)) -> None:
     if not ORGANIZER_API_KEY:
         raise HTTPException(503, "Organizer authorization is not configured")
@@ -369,16 +345,23 @@ async def save_user_data(
         upload = form.get("resume")
         # request.form() yields starlette's UploadFile, not fastapi's subclass.
         if isinstance(upload, FormUploadFile):
-            # Spec: store extracted text only, never the file. PDF/DOCX extraction is a
-            # follow-up (pypdf / python-docx); plain text is accepted today.
-            if upload.content_type != "text/plain":
-                raise HTTPException(
-                    415, "Resume upload currently accepts text/plain; send PDF/DOCX as resume_text"
-                )
+            # Spec: store extracted text only, never the file.
+            if upload.content_type not in {
+                "application/pdf",
+                "text/plain",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }:
+                raise HTTPException(415, "Resume must be PDF, plain text, or DOCX")
             content = await upload.read(MAX_UPLOAD_BYTES + 1)
             if len(content) > MAX_UPLOAD_BYTES:
                 raise HTTPException(413, "Resume exceeds 10 MiB")
-            uploaded_resume_text = content.decode("utf-8", errors="replace")[:50_000]
+            try:
+                uploaded_resume_text = await run_in_threadpool(
+                    extract_resume_text, content, upload.content_type
+                )
+            except Exception as exc:  # noqa: BLE001 - parser libraries raise many types
+                raise HTTPException(422, "Resume file could not be read") from exc
+            uploaded_resume_text = uploaded_resume_text[:50_000]
     else:
         try:
             payload = SaveUserData.model_validate(await request.json())
@@ -399,7 +382,7 @@ async def save_user_data(
             )
     doc = payload.model_dump(mode="json") | {
         "attendee_id": attendee_id,
-        "profile": profile_text(payload),
+        "profile": profile_text(bio=payload.bio, interests=payload.interests),
         "updated_at": datetime.now(UTC).isoformat(),
     }
     if uploaded_resume_text:
@@ -414,57 +397,33 @@ async def save_user_data(
             "read_attendee", lambda: es.get(index="attendees", id=attendee_doc_id)["_source"]
         )
         doc["access_token_sha256"] = old["access_token_sha256"]
+    # wait_for: the next attendee's people matches should already see this profile.
     await es_call(
-        "save_attendee", lambda: es.index(index="attendees", id=attendee_doc_id, document=doc)
+        "save_attendee",
+        lambda: es_writer.index(
+            index="attendees", id=attendee_doc_id, document=doc, refresh="wait_for"
+        ),
     )
-    talks = await es_call(
+    blockouts = [(b.start_time.isoformat(), b.end_time.isoformat()) for b in payload.blockout_times]
+    talks_query = recommend_talks_query(payload.conference_id, doc.get("profile", ""), blockouts)
+    talk_hits = await es_call(
         "recommend_talks",
-        lambda: es.search(
-            index="talks",
-            query={"bool": {"filter": [{"term": {"conference_id": payload.conference_id}}]}},
-            source={"excludes": ["semantic_content"]},
-            size=100,
-        )["hits"]["hits"],
+        lambda: es.search(**talks_query)["hits"]["hits"],
+        **{"db.elasticsearch.index": "talks", "match.blockouts": len(blockouts)},
     )
-    blockouts = [(b.start_time, b.end_time) for b in payload.blockout_times]
-    recommendations = []
-    for hit in talks:
-        talk = hit["_source"]
-        try:
-            start = datetime.fromisoformat(talk["start_time"].replace("Z", "+00:00"))
-            end = datetime.fromisoformat(talk["end_time"].replace("Z", "+00:00"))
-            if any(start < stop and begin < end for begin, stop in blockouts):
-                continue
-        except (KeyError, ValueError):
-            pass
-        recommendations.append(talk)
-    users = []
+    recommendations = [hit["_source"] | {"score": hit.get("_score")} for hit in talk_hits]
+    users: list[dict[str, Any]] = []
     if payload.discovery_opt_in:
-        found = await es_call(
+        users = await match_people(
             "recommend_attendees",
-            lambda: es.search(
-                index="attendees",
-                query={
-                    "bool": {
-                        "filter": [
-                            {"term": {"conference_id": payload.conference_id}},
-                            {"term": {"discovery_opt_in": True}},
-                        ],
-                        "must_not": [{"term": {"attendee_id": attendee_id}}],
-                    }
-                },
-                source={"includes": ["attendee_id", "name", "headline"]},
-                size=20,
-            )["hits"]["hits"],
+            similar_people_query(
+                payload.conference_id,
+                attendee_id,
+                doc.get("profile", ""),
+                payload.interests,
+                doc.get("resume_text", ""),
+            ),
         )
-        users = [
-            {
-                "attendee_id": h["_source"]["attendee_id"],
-                "name": h["_source"]["name"],
-                "headline": h["_source"].get("headline", ""),
-            }
-            for h in found
-        ]
     result: dict[str, Any] = {
         "attendee_id": attendee_id,
         "recommendations": {"talks": recommendations, "attendees": users},
@@ -588,6 +547,62 @@ async def upload_schedule(
     )
 
 
+async def match_people(operation: str, body: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Run an attendee match query (SAFE_SOURCE only) and shape hits with their "why" fragment.
+
+    A None body means the requester gave nothing to match on, so there is nothing to search.
+    """
+    if body is None:
+        return []
+    hits = await es_call(
+        operation,
+        lambda: es.search(**body)["hits"]["hits"],
+        **{"db.elasticsearch.index": "attendees"},
+    )
+    span = trace.get_current_span()
+    span.set_attribute(f"{operation}.match.candidates", len(hits))
+    if hits and hits[0].get("_score") is not None:
+        span.set_attribute(f"{operation}.match.top_score", float(hits[0]["_score"]))
+    return [person_hit(hit) for hit in hits]
+
+
+async def read_talk(conference_id: str, talk_id: str) -> dict[str, Any]:
+    return await es_call(
+        "read_talk",
+        lambda: es.get(index="talks", id=f"{conference_id}:{talk_id}")["_source"],
+        **{"db.elasticsearch.index": "talks"},
+    )
+
+
+@app.get("/conferences/{conference_id}/talks/{talk_id}/audience")
+async def talk_audience(
+    conference_id: str, talk_id: str, _: None = Depends(require_organizer)
+) -> dict[str, Any]:
+    """Q4: opted-in attendees who would enjoy this talk. Organizers only; safe fields only."""
+    talk = await read_talk(conference_id, talk_id)
+    people = await match_people("talk_audience", talk_audience_query(conference_id, talk))
+    return {"talk_id": talk_id, "count": len(people), "attendees": people}
+
+
+@app.get("/conferences/{conference_id}/talks/{talk_id}/similar-past")
+async def similar_past_talks(
+    conference_id: str, talk_id: str, _: None = Depends(require_conference_access)
+) -> dict[str, Any]:
+    """Q5: past recordings like this session, from the read-only talks-archive."""
+    talk = await read_talk(conference_id, talk_id)
+    body = similar_past_talks_query(talk)
+    hits = await es_call(
+        "similar_past_talks",
+        lambda: es.search(**body)["hits"]["hits"],
+        **{"db.elasticsearch.index": "talks-archive"},
+    )
+    trace.get_current_span().set_attribute("match.candidates", len(hits))
+    return {
+        "talk_id": talk_id,
+        "past_talks": [hit["_source"] | {"score": hit.get("_score")} for hit in hits],
+    }
+
+
 def _string_list(value: Any) -> list[str]:
     items = [value] if isinstance(value, str) else value if isinstance(value, list) else []
     return [str(item).strip() for item in items if str(item).strip()]
@@ -675,7 +690,7 @@ async def confirm_schedule(
         batch = actions[i : i + BULK_BATCH_SIZE]
         resp = await es_call(
             "confirm_schedule",
-            lambda batch=batch: es.bulk(operations=batch, refresh="wait_for"),
+            lambda batch=batch: es_writer.bulk(operations=batch, refresh="wait_for"),
             **{"db.elasticsearch.index": "talks", "conference.talk_count": len(batch) // 2},
         )
         body = getattr(resp, "body", resp)
