@@ -6,6 +6,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
+import { joinLiveConference } from './src/api';
+import { saveLiveProfile } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
 import { Organizer } from './src/Organizer';
@@ -21,10 +23,17 @@ function JoinConference({ conferences, onJoin }: {
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
 
-  function join(value: string) {
+  async function join(value: string) {
     const conference = conferences.find((item) => item.code === value.trim().toLowerCase());
     if (conference) onJoin(conference);
-    else setError('This code doesn’t match a conference in this session. Check the code or try the sample conference.');
+    else {
+      setError('');
+      try {
+        onJoin(await joinLiveConference(value));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : 'Could not join the conference.');
+      }
+    }
   }
 
   return (
@@ -37,7 +46,7 @@ function JoinConference({ conferences, onJoin }: {
           <View style={layout.intro}>
             <Label>Attendee check-in</Label>
             <Text accessibilityRole="header" style={layout.coverTitle}>Find your people.</Text>
-            <Copy>Make time for the talks you care about and the people you want to meet.</Copy>
+              <Copy>Make time for the talks you care about and the people you want to meet.</Copy>
           </View>
           <View style={layout.checkIn}>
             <Section>
@@ -65,6 +74,7 @@ export default function App() {
   const [profile, setProfile] = useState<Attendee>();
   const [editing, setEditing] = useState(false);
   const [requested, setRequested] = useState<string[]>([]);
+  const [attendeeToken, setAttendeeToken] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
 
   function publish(name: string, talks: Conference['talks']) {
@@ -80,6 +90,7 @@ export default function App() {
     setProfile(undefined);
     setEditing(false);
     setRequested([]);
+    setAttendeeToken(undefined);
   }
 
   const screen = mode === 'organizer' ? 'organizer'
@@ -87,6 +98,15 @@ export default function App() {
 
   function scrollToTop() {
     scroll.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  async function saveProfile(next: Attendee) {
+    if (conference && conference.code !== demoConference.code) {
+      const result = await saveLiveProfile(conference, next, attendeeToken);
+      if (result.attendee_token) setAttendeeToken(result.attendee_token);
+    }
+    setProfile(next);
+    setEditing(false);
   }
 
   useEffect(scrollToTop, [screen]);
@@ -114,7 +134,7 @@ export default function App() {
                     <Action title="Switch conference" onPress={() => changeConference()} secondary />
                   </View>
                   {!profile || editing ? (
-                    <ProfileForm initial={profile} onStepChange={scrollToTop} onSave={(next) => { setProfile(next); setEditing(false); }} />
+                    <ProfileForm initial={profile} onStepChange={scrollToTop} onSave={saveProfile} />
                   ) : (
                     <Recommendations conference={conference} profile={profile} requested={requested}
                       onEdit={() => setEditing(true)}

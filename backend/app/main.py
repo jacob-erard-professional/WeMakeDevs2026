@@ -20,6 +20,7 @@ from uuid import uuid4
 import qrcode
 from elasticsearch import ApiError, Elasticsearch, NotFoundError
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -229,6 +230,19 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Conference API", version="0.1.0", lifespan=lifespan)
+_default_cors_origin = "http://localhost:8081"
+_cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOW_ORIGINS", _default_cors_origin).split(",")
+    if origin.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 FastAPIInstrumentor.instrument_app(app)
 
 
@@ -556,6 +570,36 @@ async def recommended_people(profile: dict[str, Any]) -> dict[str, list[dict[str
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/join/{conference_id}")
+async def join_conference(conference_id: str) -> dict[str, Any]:
+    """Resolve a QR/link to its confirmed, public schedule without exposing attendee data."""
+    hits = await es_call(
+        "read_join_conference",
+        lambda: es.search(
+            index="talks",
+            size=1000,
+            source=["talk_id", "title", "abstract", "track", "room", "start_time", "end_time"],
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"conference_id": conference_id}},
+                        {"term": {"confirmed": True}},
+                    ]
+                }
+            },
+            sort=[{"start_time": {"order": "asc"}}],
+        )["hits"]["hits"],
+        **{"db.elasticsearch.index": "talks"},
+    )
+    if not hits:
+        raise HTTPException(404, "Conference not found or has no confirmed schedule")
+    return {
+        "conference_id": conference_id,
+        "name": conference_id.replace("-", " ").title(),
+        "talks": [hit["_source"] for hit in hits],
+    }
 
 
 @app.post("/save-user-data")

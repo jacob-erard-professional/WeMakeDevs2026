@@ -14,7 +14,7 @@ const blank: Attendee = {
 
 export function ProfileForm({ initial, onSave, onStepChange }: {
   initial?: Attendee;
-  onSave: (profile: Attendee) => void;
+  onSave: (profile: Attendee) => Promise<void>;
   onStepChange: () => void;
 }) {
   const [profile, setProfile] = useState(initial ?? blank);
@@ -22,6 +22,7 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function update(changes: Partial<Attendee>) {
     setProfile((current) => ({ ...current, ...changes }));
@@ -74,12 +75,20 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
     changeStep('availability');
   }
 
-  function save() {
+  async function save() {
     if (start.trim() || end.trim()) {
       setError('Add the pending time block or clear both time fields before continuing.');
       return;
     }
-    onSave(profile);
+    setSaving(true);
+    setError('');
+    try {
+      await onSave(profile);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not save your profile.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -130,7 +139,7 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
         })}
         {error ? <Message error>{error}</Message> : null}
         <View style={styles.row}>
-          <Action title="See my recommendations" onPress={save} />
+          <Action title={saving ? 'Saving profile…' : 'See my recommendations'} onPress={save} disabled={saving} />
           <Action title="Back to profile" onPress={() => changeStep('about')} secondary />
         </View>
       </Section>}
