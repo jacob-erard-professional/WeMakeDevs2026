@@ -17,7 +17,9 @@ The platform gateway kills every request at 15 s and `semantic_text` embeds roug
 - Progress lives on the `conferences` doc (`schedule_status`, `schedule_talk_count`,
   `schedule_indexed_count`, `schedule_error`, `schedule_updated_at`) and is public via
   `GET /conferences/{conference_id}/schedule-status`; `GET /join/{conference_id}` also returns
-  `schedule_status` and `talk_count` and no longer 404s while indexing.
+  `schedule_status`, `schedule_error`, the indexed/total counts and `talk_count`, and no longer
+  404s while indexing (name + empty `talks` + status). An `indexing` whose `schedule_updated_at`
+  is older than 120 s is reported as `failed` (job died with its pod); re-confirming repairs it.
 - Limit: the per-conference lock is in-process; with two replicas, concurrent confirms for one
   conference landing on different pods can still overlap on the stale delete.
 
