@@ -70,12 +70,14 @@ Rerun `./scripts/dev-up.sh` after changing the key in `.env`.
 ## 4. Serverless differences
 
 - Don't set `number_of_shards`, `number_of_replicas` or `refresh_interval`: Serverless manages them and rejects the request.
-- No ML nodes to manage. Inference runs on Elastic-hosted endpoints that scale on their own, **down to zero**. After a quiet period the first semantic query returns **HTTP 408 `model_deployment_timeout_exception`** for up to about a minute while `.multilingual-e5-small-elasticsearch` wakes up (measured: ~50 s, then ~1.5 s per query). Retry on 408, and send one warm-up semantic query when the backend starts and before a demo.
+- No ML nodes to manage. Inference runs on Elastic-hosted endpoints. Endpoints on the `elastic` service (Jina, ELSER, the rerankers) are always on. Endpoints on the `elasticsearch` service (e.g. `.multilingual-e5-small-elasticsearch`) scale **down to zero**: after a quiet period the first query returns **HTTP 408 `model_deployment_timeout_exception`** for about 50 s. `talks` uses Jina, so it has no cold start.
 - No cluster/node APIs (`_cluster/health`, `_nodes`, `_cat/nodes`). Use `GET /` and `GET /<index>/_count` for health checks.
 
 ## 5. The `talks` index
 
-24,691 conference talks: KubeCon + CloudNativeCon schedules (`source: kubecon`) and PyVideo talks (`source: pyvideo`), with embeddings already computed.
+24,691 conference talks: KubeCon + CloudNativeCon schedules (`source: kubecon`) and PyVideo talks (`source: pyvideo`), embedded with Jina by Elasticsearch on write.
+
+`talks` is an **alias** for the index `talks-jina`. Query and write through `talks`; to change the mapping or model, build a new index and move the alias (`POST /_aliases`) so nothing downstream changes.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -94,7 +96,7 @@ Rerun `./scripts/dev-up.sh` after changing the key in `.env`.
 | `duration_s` | integer | |
 | `language` | keyword | |
 | `url`, `video_url` | keyword | schedule page / recording |
-| `semantic_content` | semantic_text | title + abstract, embedded with `.multilingual-e5-small-elasticsearch` (384 dims) |
+| `semantic_content` | semantic_text | title + abstract, embedded with `.jina-embeddings-v5-text-small` (1024 dims, cosine) |
 
 The mapping is strict: indexing a field that isn't listed fails. Change the mapping on purpose, not by accident.
 
@@ -177,8 +179,8 @@ List them all with `GET /_inference/_all`. The useful ones:
 
 | Use | Endpoint |
 |---|---|
-| Embeddings (what `talks` uses) | `.multilingual-e5-small-elasticsearch` |
-| Embeddings, Jina (organizers recommend Jina) | `.jina-embeddings-v5-text-small`, `.jina-embeddings-v3` |
+| Embeddings, Jina (what `talks` uses; organizers recommend Jina) | `.jina-embeddings-v5-text-small`, `.jina-embeddings-v3` |
+| Embeddings, e5 (scales to zero, see section 4) | `.multilingual-e5-small-elasticsearch` |
 | Sparse embeddings (`semantic_text` default) | `.elser-2-elastic` |
 | Reranking | `.jina-reranker-v3.5`, `.rerank-v1-elasticsearch` |
 
