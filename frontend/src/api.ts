@@ -140,7 +140,11 @@ export async function parseResume(resume: ResumeAsset, signal?: AbortSignal) {
   else body.append('resume', part as unknown as Blob);
   const response = await request(`${apiBase}/parse-resume`, { method: 'POST', body, signal }, 45000);
   if (!response.ok) throw await apiError(response, 'Could not read the résumé.');
-  return response.json() as Promise<{ resume_profile: ResumeProfile; is_linkedin_pdf: boolean }>;
+  return response.json() as Promise<{
+    resume_profile: ResumeProfile;
+    is_linkedin_pdf: boolean;
+    contact?: { name: string; email: string; linkedin_url: string };
+  }>;
 }
 
 export async function saveLiveProfile(

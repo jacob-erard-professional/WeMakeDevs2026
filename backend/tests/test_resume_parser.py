@@ -299,3 +299,28 @@ def test_merge_typed_values_win_and_lists_union() -> None:
 def test_merge_with_empty_profile_is_identity() -> None:
     typed = {"headline": "", "skills": ["go"], "interests": ["ebpf"], "working_on": "x"}
     assert merge_resume_profile(typed, ResumeProfile()) == typed
+
+
+def test_extract_contact_from_plain_resume():
+    from app.resume_parser import extract_contact
+
+    text = (
+        "JANE DOE\n"
+        "jane.doe@example.com | (801) 555-0100 | linkedin.com/in/jane-doe-123\n"
+        "Data science student and backend developer.\n"
+    )
+    assert extract_contact(text) == {
+        "name": "Jane Doe",
+        "email": "jane.doe@example.com",
+        "linkedin_url": "https://www.linkedin.com/in/jane-doe-123",
+    }
+
+
+def test_extract_contact_missing_fields_are_empty():
+    from app.resume_parser import extract_contact
+
+    assert extract_contact("Résumé\nBuilt data pipelines in 2024.") == {
+        "name": "",
+        "email": "",
+        "linkedin_url": "",
+    }

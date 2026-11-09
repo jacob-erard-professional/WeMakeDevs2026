@@ -40,6 +40,7 @@ from app.resume_parser import (
     MAX_RESUME_CHARS,
     ResumeProfile,
     UnsupportedResumeType,
+    extract_contact,
     extract_resume_text,
     is_linkedin_pdf_text,
     merge_resume_profile,
@@ -896,7 +897,12 @@ async def parse_resume_preview(resume: UploadFile = File(...)) -> dict[str, Any]
     """Preview what a résumé contributes to the profile. Stores nothing; same limits as save."""
     text = await read_resume_upload(resume)
     profile = await parse_resume_traced(text) if text.strip() else ResumeProfile()
-    return {"resume_profile": profile.model_dump(), "is_linkedin_pdf": is_linkedin_pdf_text(text)}
+    return {
+        "resume_profile": profile.model_dump(),
+        "is_linkedin_pdf": is_linkedin_pdf_text(text),
+        # For prefilling the uploader's own form only; nothing is stored by this endpoint.
+        "contact": extract_contact(text),
+    }
 
 
 async def claimed_profile(
