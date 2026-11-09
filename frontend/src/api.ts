@@ -36,6 +36,7 @@ export type LiveRecommendations = {
   schedules: Array<{ relevance: number; talks: ApiTalk[] }>;
   attendees: { similar: ApiPerson[]; matches: ApiPerson[] };
 };
+export type PeopleRecommendations = LiveRecommendations['attendees'];
 export type SaveProfileResult = {
   attendee_id: string;
   attendee_token?: string;
@@ -177,6 +178,22 @@ export function normalizeRecommendations(value: unknown): LiveRecommendations {
     schedules: list(partial.schedules),
     attendees: { similar: list(partial.attendees?.similar), matches: list(partial.attendees?.matches) },
   };
+}
+
+export async function refreshPeopleRecommendations(
+  conferenceId: string,
+  profileId: string,
+  attendeeToken: string,
+  signal?: AbortSignal,
+): Promise<PeopleRecommendations> {
+  const query = new URLSearchParams({ profile_id: profileId });
+  const response = await request(
+    `${apiBase}/conferences/${encodeURIComponent(conferenceId)}/people/recommend?${query}`,
+    { headers: { Authorization: `Bearer ${attendeeToken}` }, signal },
+  );
+  if (!response.ok) throw await apiError(response, 'Could not refresh people recommendations.');
+  const result = await response.json() as unknown;
+  return normalizeRecommendations({ attendees: result }).attendees;
 }
 
 async function apiError(response: Response, fallback: string) {

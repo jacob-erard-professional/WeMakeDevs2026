@@ -17,6 +17,7 @@ const PREFIX = 'conference-connections.';
 export type StoredProfile = Omit<Attendee, 'resume'> & { resumeName?: string };
 
 export type AttendeeSession = {
+  attendeeId?: string;
   attendeeToken?: string;
   // The profile last accepted by the server (or the demo), and any unsaved edits.
   saved?: StoredProfile;
@@ -90,6 +91,7 @@ function isStoredProfile(value: unknown): value is StoredProfile {
 
 function isAttendeeSession(value: unknown): value is AttendeeSession {
   return isRecord(value)
+    && (value.attendeeId === undefined || isString(value.attendeeId))
     && (value.attendeeToken === undefined || isString(value.attendeeToken))
     && (value.saved === undefined || isStoredProfile(value.saved))
     && (value.draft === undefined || isStoredProfile(value.draft))

@@ -68,18 +68,40 @@ function matchLabel(talk: RankedTalk) {
   return `${Math.round(talk.relevance * 100)}% match`;
 }
 
-export function Recommendations({ conference, profile, attendeeToken, recommendations, requested, onRequest, onEdit }: {
+export function Recommendations({ conference, profile, attendeeToken, recommendations, requested, onRequest, onRefreshPeople, onEdit }: {
   conference: Conference;
   profile: Attendee;
   attendeeToken?: string;
   recommendations?: LiveRecommendations;
   requested: string[];
   onRequest: (id: string) => void;
+  onRefreshPeople?: () => Promise<void>;
   onEdit: (talkId?: string) => void;
 }) {
   const [section, setSection] = useState<Section>('My schedule');
   const [refreshed, setRefreshed] = useState(false);
+  const [refreshingPeople, setRefreshingPeople] = useState(false);
+  const [peopleError, setPeopleError] = useState('');
   const live = !conference.sample;
+
+  async function refreshPeople() {
+    if (refreshingPeople) return;
+    setPeopleError('');
+    setRefreshingPeople(true);
+    try {
+      if (live) {
+        if (!onRefreshPeople) throw new Error('Your attendee session is not ready. Save your profile first.');
+        await onRefreshPeople();
+      } else {
+        setRefreshed(true);
+      }
+      setRefreshed(true);
+    } catch (reason) {
+      setPeopleError(reason instanceof Error ? reason.message : 'Could not refresh people recommendations.');
+    } finally {
+      setRefreshingPeople(false);
+    }
+  }
 
   let talks: RankedTalk[];
   let schedule: RankedTalk[];
@@ -124,8 +146,10 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
         ) : section === 'People' ? (
           <>
             <Heading>People to meet</Heading>
-            {!live ? <Action title="Refresh people" onPress={() => setRefreshed(true)} secondary /> : null}
+            <Action title={refreshingPeople ? 'Refreshing people…' : 'Refresh people'} onPress={() => void refreshPeople()}
+              disabled={refreshingPeople} secondary />
             {refreshed ? <Message>{peopleCount ? 'People suggestions updated.' : 'No people are available yet.'}</Message> : null}
+            {peopleError ? <Message error>{peopleError}</Message> : null}
             {!peopleCount ? <Copy>{emptyPeople}</Copy> : null}
             {live ? people.map((person) => (
               <View key={person.attendee_id} style={program.person}>

@@ -6,7 +6,13 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
-import { conferenceFromSchedule, joinLiveConference, normalizeRecommendations, saveLiveProfile } from './src/api';
+import {
+  conferenceFromSchedule,
+  joinLiveConference,
+  normalizeRecommendations,
+  refreshPeopleRecommendations,
+  saveLiveProfile,
+} from './src/api';
 import type { LiveRecommendations } from './src/api';
 import type { ParsedTalk } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
@@ -110,12 +116,14 @@ export default function App() {
   const [draft, setDraft] = useState<Attendee>();
   const [previousResume, setPreviousResume] = useState<PreviousResume>();
   const [requested, setRequested] = useState<string[]>([]);
+  const [attendeeId, setAttendeeId] = useState<string>();
   const [attendeeToken, setAttendeeToken] = useState<string>();
   const [recommendations, setRecommendations] = useState<LiveRecommendations>();
   const [browsingSchedule, setBrowsingSchedule] = useState(false);
   const [resumeTalk, setResumeTalk] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const recommendationScope = useRef(0);
   // The attendee step lives in the path (/join/<code>[/availability|/plan]) so a reload
   // restores it and browser Back returns to the previous step.
   const route = page === 'join' ? parseJoinPath(path) : null;
@@ -128,6 +136,7 @@ export default function App() {
 
   function changeConference(next?: Conference) {
     if (draftTimer.current) clearTimeout(draftTimer.current);
+    recommendationScope.current += 1;
     scope.current = next;
     setConference(next);
     setRequested([]);
@@ -138,6 +147,7 @@ export default function App() {
     const saved = stored?.saved ? fromStoredProfile(stored.saved) : undefined;
     const unsaved = stored?.draft ? fromStoredProfile(stored.draft) : undefined;
     const resumeName = unsaved?.resumeName ?? saved?.resumeName;
+    setAttendeeId(stored?.attendeeId);
     setAttendeeToken(stored?.attendeeToken);
     setRecommendations(saved && stored?.recommendations ? normalizeRecommendations(stored.recommendations) : undefined);
     setProfile(saved?.profile);
@@ -161,7 +171,9 @@ export default function App() {
   function startOver() {
     if (!activeConference) return;
     if (draftTimer.current) clearTimeout(draftTimer.current);
+    recommendationScope.current += 1;
     attendeeSessions.clear(activeConference.code);
+    setAttendeeId(undefined);
     setAttendeeToken(undefined);
     setRecommendations(undefined);
     setProfile(undefined);
@@ -194,27 +206,52 @@ export default function App() {
 
   async function saveProfile(next: Attendee) {
     if (!activeConference) return;
+    recommendationScope.current += 1;
     let token = attendeeToken;
+    let id = attendeeId;
     let live: LiveRecommendations | undefined;
     if (!activeConference.sample) {
       // The bearer token makes this an update of the same attendee rather than a duplicate.
       const result = await saveLiveProfile(activeConference, next, attendeeToken);
       if (scope.current !== activeConference) return;
       if (result.attendee_token) token = result.attendee_token;
+      id = result.attendee_id;
       live = result.recommendations;
     }
     if (draftTimer.current) clearTimeout(draftTimer.current);
     const resumeName = next.resume?.name ?? previousResume?.name;
     attendeeSessions.update(activeConference.code, {
-      attendeeToken: token, saved: toStoredProfile(next, previousResume?.name), draft: undefined, recommendations: live,
+      attendeeId: id, attendeeToken: token, saved: toStoredProfile(next, previousResume?.name), draft: undefined, recommendations: live,
     });
     setRecommendations(live);
+    setAttendeeId(id);
     setAttendeeToken(token);
     setProfile(next);
     setDraft(next);
     setPreviousResume(resumeName ? { name: resumeName, onServer: true } : undefined);
     if (resumeTalk) setBrowsingSchedule(true);
     else navigate(joinPath(activeConference.code, 'plan'));
+  }
+
+  async function refreshPeople() {
+    if (!activeConference || activeConference.sample || !attendeeId || !attendeeToken) {
+      throw new Error('Save your profile before refreshing people.');
+    }
+    const conferenceScope = activeConference;
+    const token = attendeeToken;
+    const refreshScope = recommendationScope.current;
+    const attendees = await refreshPeopleRecommendations(conferenceScope.code, attendeeId, token);
+    // A response for a previous conference or attendee session must never overwrite the current UI.
+    if (
+      scope.current !== conferenceScope
+      || attendeeToken !== token
+      || recommendationScope.current !== refreshScope
+    ) return;
+    setRecommendations((current) => {
+      const next = { ...normalizeRecommendations(current), attendees };
+      attendeeSessions.update(conferenceScope.code, { recommendations: next });
+      return next;
+    });
   }
 
   function editProfile(talkId?: string) {
@@ -274,6 +311,7 @@ export default function App() {
                     <Recommendations conference={activeConference} profile={profile} attendeeToken={attendeeToken} requested={requested}
                       recommendations={recommendations}
                       onEdit={editProfile}
+                      onRefreshPeople={refreshPeople}
                       onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
                   ) : null}
                 </View>
