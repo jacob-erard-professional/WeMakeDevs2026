@@ -231,6 +231,49 @@ def _looks_like_location(line: str) -> bool:
     return "," in line or line.endswith(" Area") or line.lower() == "remote"
 
 
+_LINKEDIN_URL_RE = re.compile(
+    r"(?:https?://)?(?:[\w-]+\.)?linkedin\.com/in/([\w%-]+)", re.IGNORECASE
+)
+_NAME_WORD = r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'.-]*"
+_NAME_RE = re.compile(rf"^{_NAME_WORD}(?: {_NAME_WORD}){{1,3}}$")
+_NOT_NAME_WORDS = {"resume", "résumé", "curriculum", "vitae", "cv", "contact", "summary", "profile"}
+
+
+def _looks_like_name(line: str) -> bool:
+    words = {word.lower().strip(".") for word in line.split()}
+    return bool(_NAME_RE.match(line)) and not words & _NOT_NAME_WORDS
+
+
+def extract_contact(text: str) -> dict[str, str]:
+    """Name, email and LinkedIn URL for prefilling the attendee's own form.
+
+    Deterministic on purpose: contact details never go through the model and are never written
+    into matchable profile fields. Only the /parse-resume preview returns them, to the uploader.
+    """
+    text = normalize_whitespace(text)
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    email_match = _EMAIL_RE.search(text)
+    linkedin_match = _LINKEDIN_URL_RE.search(text)
+    name = ""
+    if is_linkedin_pdf_text(text):
+        _, name_block = _linkedin_sections(lines)
+        if name_block and _looks_like_name(name_block[0]):
+            name = name_block[0]
+    if not name:
+        # A résumé almost always opens with the person's name; split "Name | email | phone" headers.
+        for line in lines[:5]:
+            candidate = re.split(r"\s*[|•·]\s*", line)[0].strip()
+            if _looks_like_name(candidate):
+                name = candidate.title() if candidate.isupper() else candidate
+                break
+    linkedin = linkedin_match.group(1) if linkedin_match else ""
+    return {
+        "name": name,
+        "email": email_match.group(0) if email_match else "",
+        "linkedin_url": f"https://www.linkedin.com/in/{linkedin}" if linkedin else "",
+    }
+
+
 def parse_linkedin_profile(text: str) -> ResumeProfile:
     """Deterministic parse of the LinkedIn export: Top Skills, headline and current role."""
     lines = [line.strip() for line in text.split("\n") if line.strip()]

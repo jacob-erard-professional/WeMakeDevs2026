@@ -80,11 +80,14 @@ export function ProfileForm({ initial, conference, previousResume, step, onSave,
     setPickedUp([]);
     setResumeNote('');
     try {
-      const { resume_profile: parsed } = await parseResume(resume);
+      const { resume_profile: parsed, contact } = await parseResume(resume);
       if (requestId !== parseRequest.current) return;
       const current = latest.current;
       const changes: Partial<Attendee> = {};
       const found: string[] = [];
+      if (contact?.name && !current.name.trim()) { changes.name = contact.name; found.push('your name'); }
+      if (contact?.email && !current.email.trim()) { changes.email = contact.email; found.push('your email'); }
+      if (contact?.linkedin_url && !current.linkedin.trim()) { changes.linkedin = contact.linkedin_url; found.push('your LinkedIn'); }
       const summary = parsed.summary.trim()
         || [parsed.headline.trim(), parsed.working_on.trim()].filter(Boolean).join('. ');
       if (!current.bio.trim() && summary) { changes.bio = summary; found.push('a bio'); }
