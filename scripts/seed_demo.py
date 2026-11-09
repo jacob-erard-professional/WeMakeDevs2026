@@ -592,6 +592,7 @@ def main() -> int:
             token = result.get("attendee_token")
             if token:
                 tokens[name] = {"attendee_id": attendee_id, "token": token}
+                write_tokens(args.tokens_file, tokens)
         print(f"  {'updated' if existing else 'created'}  {attendee_id}  {name}")
         if first_recommendations is None:
             first_recommendations = result.get("recommendations", {})
