@@ -25,6 +25,17 @@ export type ParsedTalk = {
 };
 export type ArchiveTalk = { title: string; conference?: string; year?: number; url?: string; video_url?: string };
 
+// GET /talks/search over the public past-talk archive (backend `search_archive_talks`).
+export type ArchiveSearchTalk = ArchiveTalk & {
+  id: string; abstract?: string; speakers?: string[]; tracks?: string[]; source?: 'kubecon' | 'pyvideo';
+};
+export type ArchiveFacet = { value: string | number; count: number };
+export type ArchiveSearchResult = {
+  total: number; page: number; has_more: boolean; talks: ArchiveSearchTalk[];
+  facets: { tracks: ArchiveFacet[]; sources: ArchiveFacet[]; years: ArchiveFacet[] };
+};
+export type ArchiveSearchQuery = { q: string; track?: string; source?: string; page: number };
+
 // Shapes returned by POST /save-user-data (backend `save_user_data`). Ranked talks are projected
 // through TALK_SOURCE, so abstract/speakers/track are only present when the index adds them.
 export type ApiTalk = {
@@ -109,6 +120,16 @@ export async function loadRelatedTalks(conferenceId: string, talkId: string, tok
   if (!response.ok) throw await apiError(response, 'Could not load similar past talks.');
   const result = await response.json() as { talks: ArchiveTalk[] };
   return result.talks;
+}
+
+export async function searchArchiveTalks(query: ArchiveSearchQuery, signal: AbortSignal) {
+  const params = new URLSearchParams({ page: String(query.page) });
+  if (query.q.trim()) params.set('q', query.q.trim());
+  if (query.track) params.set('track', query.track);
+  if (query.source) params.set('source', query.source);
+  const response = await request(`${apiBase}/talks/search?${params}`, { signal }, 12000);
+  if (!response.ok) throw await apiError(response, 'Could not search talks.');
+  return response.json() as Promise<ArchiveSearchResult>;
 }
 
 export async function searchSuggestedPeople(conferenceId: string, token: string, note: string, signal: AbortSignal) {
