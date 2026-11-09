@@ -7,6 +7,18 @@ Setup and the remaining manual steps are in [SETUP.md](SETUP.md); how to set up 
 
 Live demo: https://wearedevs.cnh.radarhq.io (API under `/api`, docs at `/api/docs`).
 
+## Local app development
+
+After copying `.env.example` to `.env` and filling in the Elasticsearch values, start the API and
+Expo web app together:
+
+```sh
+./run.sh
+```
+
+The API is at http://localhost:8000/docs and the web app at http://localhost:8081. `Ctrl-C` stops
+both. Override the ports when needed, for example `BACKEND_PORT=8002 FRONTEND_PORT=8082 ./run.sh`.
+
 ## AI disclosure
 
 Per the hackathon rules, here is how we used AI coding assistants:
