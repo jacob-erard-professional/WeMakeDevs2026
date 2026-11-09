@@ -225,3 +225,6 @@ __marimo__/
 .backend-*.pid
 elastic-start-local/
 .demo-tokens.json
+
+# Claude Code agent worktrees
+.claude/worktrees/
