@@ -73,11 +73,11 @@ Rerun `./scripts/dev-up.sh` after changing the key in `.env`.
 - No ML nodes to manage. Inference runs on Elastic-hosted endpoints. Endpoints on the `elastic` service (Jina, ELSER, the rerankers) are always on. Endpoints on the `elasticsearch` service (e.g. `.multilingual-e5-small-elasticsearch`) scale **down to zero**: after a quiet period the first query returns **HTTP 408 `model_deployment_timeout_exception`** for about 50 s. `talks` uses Jina, so it has no cold start.
 - No cluster/node APIs (`_cluster/health`, `_nodes`, `_cat/nodes`). Use `GET /` and `GET /<index>/_count` for health checks.
 
-## 5. The `talks` index
+## 5. The `talks-archive` index
 
 24,691 conference talks: KubeCon + CloudNativeCon schedules (`source: kubecon`) and PyVideo talks (`source: pyvideo`), embedded with Jina by Elasticsearch on write.
 
-`talks` is an **alias** for the index `talks-jina`. Query and write through `talks`; to change the mapping or model, build a new index and move the alias (`POST /_aliases`) so nothing downstream changes.
+`talks-archive` is an **alias** for the index `talks-jina`: past talks for reference and "similar past talks". It is read-only for the app. The backend owns a separate `talks` index for the live conference schedule (mapping in [vector-matching.md](vector-matching.md)). To change the archive's mapping or model, build a new index and move the alias (`POST /_aliases`).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -102,7 +102,7 @@ The mapping is strict: indexing a field that isn't listed fails. Change the mapp
 
 ## 6. Queries
 
-All of these run as `POST /talks/_search`. Python: `es.search(index="talks", **body)`.
+All of these run as `POST /talks-archive/_search`. Python: `es.search(index="talks-archive", **body)`.
 
 **Keyword**
 
@@ -179,7 +179,7 @@ List them all with `GET /_inference/_all`. The useful ones:
 
 | Use | Endpoint |
 |---|---|
-| Embeddings, Jina (what `talks` uses; organizers recommend Jina) | `.jina-embeddings-v5-text-small`, `.jina-embeddings-v3` |
+| Embeddings, Jina (what `talks-archive` and the app's indices use; organizers recommend Jina) | `.jina-embeddings-v5-text-small`, `.jina-embeddings-v3` |
 | Embeddings, e5 (scales to zero, see section 4) | `.multilingual-e5-small-elasticsearch` |
 | Sparse embeddings (`semantic_text` default) | `.elser-2-elastic` |
 | Reranking | `.jina-reranker-v3.5`, `.rerank-v1-elasticsearch` |
@@ -190,7 +190,7 @@ Tested on this project: the Jina embedding, ELSER and Jina reranker endpoints al
 
 ## 8. Agents and MCP
 
-Kibana's **Agent Builder** exposes an MCP server at `<Kibana URL>/api/agent_builder/mcp`. It has tools to search indices and run ES|QL, so Claude Code, Codex or Cursor can query `talks` directly. Add it to Claude Code with the same API key:
+Kibana's **Agent Builder** exposes an MCP server at `<Kibana URL>/api/agent_builder/mcp`. It has tools to search indices and run ES|QL, so Claude Code, Codex or Cursor can query `talks-archive` (and the app's `talks`/`attendees`) directly. Add it to Claude Code with the same API key:
 
 ```sh
 claude mcp add --transport http elastic \
