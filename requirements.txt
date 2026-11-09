@@ -11,3 +11,5 @@ opentelemetry-instrumentation-fastapi>=0.49b0
 openai>=1.0,<3
 pypdf>=5,<7
 python-docx>=1.1,<2
+icalendar>=6,<8
+defusedxml>=0.7,<1
