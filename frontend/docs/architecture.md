@@ -1,6 +1,10 @@
 # Frontend architecture
 
-`App.tsx` is the current entry screen. `src/conference.ts` defines the preview's UI model, and `src/demoConference.ts` contains its synthetic data. The preview demonstrates the content shape with a single screen. Navigation, forms, networking, and persistence are future slices.
+`App.tsx` owns the organizer and attendee flow, published conferences, and the active attendee session. `src/conference.ts` holds the local models, schedule parser, and recommendation logic. `src/demoConference.ts` contains synthetic talks and attendees. `Organizer.tsx`, `ProfileForm.tsx`, and `Recommendations.tsx` own their screen state and share controls from `src/ui.tsx`.
+
+The mock uses one conference day in Mountain Time. Talk recommendations prioritize interest matches and exclude unavailable times. The schedule greedily selects recommendations without overlaps. Switching conferences clears the active profile and connection requests. The résumé picker retains the filename in memory only. The sample conference simulates new arrivals on refresh, and newly published conferences start with an empty people list.
+
+Schedule import currently supports pasted text. Join codes resolve within the running app. Shared join links, URL/file schedule import, live recommendations, connection acceptance, and persistence depend on the FastAPI integration.
 
 ## Extend by feature
 
