@@ -15,6 +15,12 @@ type JoinResponse = {
   }>;
 };
 
+export type OrganizerSession = { conferenceId: string; organizerToken: string; name: string };
+export type ParsedTalk = {
+  title: string; abstract?: string; speakers?: string[]; room?: string; track?: string[];
+  start_time: string; end_time: string;
+};
+
 function venueMinutes(timestamp: string) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -79,4 +85,46 @@ export async function saveLiveProfile(
   });
   if (!response.ok) throw new Error('Could not save your profile to the conference server.');
   return response.json() as Promise<{ attendee_token?: string }>;
+}
+
+async function apiError(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null) as { detail?: string } | null;
+  return new Error(body?.detail || fallback);
+}
+
+export async function createLiveConference(name: string): Promise<OrganizerSession> {
+  const response = await fetch(`${apiBase}/conferences`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+  });
+  if (!response.ok) throw await apiError(response, 'Could not create the conference.');
+  const body = await response.json() as { conference_id: string; organizer_token: string };
+  return { conferenceId: body.conference_id, organizerToken: body.organizer_token, name };
+}
+
+export async function parseLiveSchedule(
+  session: OrganizerSession, sourceUrl?: string, asset?: { uri: string; name: string },
+): Promise<{ talks: ParsedTalk[]; warnings: string[] }> {
+  const query = new URLSearchParams({ conference_id: session.conferenceId });
+  const headers = { 'X-Organizer-Token': session.organizerToken };
+  let options: RequestInit = { method: 'POST', headers };
+  if (sourceUrl) query.set('source_url', sourceUrl);
+  else if (asset) {
+    const file = await (await fetch(asset.uri)).blob();
+    const body = new FormData();
+    body.append('file', file, asset.name);
+    options = { ...options, body };
+  } else throw new Error('Choose a schedule link, image, or PDF first.');
+  const response = await fetch(`${apiBase}/upload-schedule?${query}`, options);
+  if (!response.ok) throw await apiError(response, 'Could not parse the schedule.');
+  return response.json() as Promise<{ talks: ParsedTalk[]; warnings: string[] }>;
+}
+
+export async function confirmLiveSchedule(session: OrganizerSession, talks: ParsedTalk[]) {
+  const response = await fetch(`${apiBase}/confirm-schedule`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Organizer-Token': session.organizerToken },
+    body: JSON.stringify({ conference_id: session.conferenceId, talks }),
+  });
+  if (!response.ok) throw await apiError(response, 'Could not publish the schedule.');
+  return response.json() as Promise<{ join_url: string; qr_code_data_url: string }>;
 }

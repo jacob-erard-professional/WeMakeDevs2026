@@ -1,71 +1,100 @@
+import { getDocumentAsync } from 'expo-document-picker';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 
-import { formatTime, parseSchedule } from './conference';
-import type { Conference } from './conference';
-import { sampleSchedule } from './demoConference';
+import { confirmLiveSchedule, createLiveConference, parseLiveSchedule } from './api';
+import type { OrganizerSession, ParsedTalk } from './api';
 import { Flow } from './Flow';
 import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
-export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conference['talks']) => Conference }) {
-  const [name, setName] = useState('');
-  const [source, setSource] = useState('');
-  const [preview, setPreview] = useState<ReturnType<typeof parseSchedule>>();
-  const [published, setPublished] = useState<Conference>();
+type ScheduleAsset = { uri: string; name: string };
 
-  if (published) {
-    return (
-      <Flow step="published" style={styles.section}>
-        <Label>ATTENDEE ENTRY PASS</Label>
-        <Heading large>{published.name}</Heading>
-        <View style={passStyles.pass}>
-          <View accessible accessibilityRole="image" accessibilityLabel={`Conference QR code for ${published.code}`}>
-            <QRCode value={published.code} size={132} quietZone={28} />
-          </View>
-          <View style={passStyles.details}>
-            <Label>JOIN CODE</Label>
-            <Text selectable style={passStyles.code}>{published.code}</Text>
-            <Copy>Scan in the mobile app or type the code at check-in.</Copy>
-          </View>
-        </View>
-        <Copy>Demo events are available in this app session. Joining a newly created event on another device requires the live backend.</Copy>
-        <Action title="Create another conference" onPress={() => {
-          setPublished(undefined);
-          setPreview(undefined);
-          setName('');
-          setSource('');
-        }} secondary />
-      </Flow>
-    );
+function displayTime(timestamp: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit',
+  }).format(new Date(timestamp));
+}
+
+export function Organizer() {
+  const [name, setName] = useState('');
+  const [session, setSession] = useState<OrganizerSession>();
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [asset, setAsset] = useState<ScheduleAsset>();
+  const [draft, setDraft] = useState<{ talks: ParsedTalk[]; warnings: string[] }>();
+  const [published, setPublished] = useState<{ joinUrl: string }>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function createConference() {
+    if (!name.trim()) { setError('Enter a conference name first.'); return; }
+    setBusy(true); setError('');
+    try { setSession(await createLiveConference(name.trim())); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not create the conference.'); }
+    finally { setBusy(false); }
   }
 
-  return (
-    <Flow step="schedule" style={styles.stack}>
-      <Heading large>Create a conference</Heading>
-      <Copy>Paste a schedule and review the talks before publishing. This demo imports text for a single day in Mountain Time.</Copy>
-      <Section>
-        <Field label="Conference name" value={name} onChangeText={setName} maxLength={100} />
-        <Copy>One talk per line in the format start | end | title | topic | room. Use 24-hour times.</Copy>
-        <Field label="Schedule text" value={source} onChangeText={(text) => { setSource(text); setPreview(undefined); }} multiline maxLength={20000} />
-        <View style={styles.row}>
-          <Action title="Load sample schedule" onPress={() => { setSource(sampleSchedule); setPreview(undefined); }} secondary />
-          <Action title="Preview schedule" onPress={() => setPreview(parseSchedule(source))} />
+  async function chooseFile() {
+    setError('');
+    const result = await getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: false });
+    if (!result.canceled) { setAsset(result.assets[0]); setSourceUrl(''); setDraft(undefined); }
+  }
+
+  async function parseSchedule() {
+    if (!session) return;
+    setBusy(true); setError('');
+    try { setDraft(await parseLiveSchedule(session, sourceUrl.trim() || undefined, asset)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not parse the schedule.'); }
+    finally { setBusy(false); }
+  }
+
+  async function publish() {
+    if (!session || !draft?.talks.length) return;
+    setBusy(true); setError('');
+    try { setPublished({ joinUrl: (await confirmLiveSchedule(session, draft.talks)).join_url }); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not publish the schedule.'); }
+    finally { setBusy(false); }
+  }
+
+  if (published && session) return (
+    <Flow step="published" style={styles.section}>
+      <Label>ATTENDEE ENTRY PASS</Label><Heading large>{session.name}</Heading>
+      <View style={passStyles.pass}>
+        <View accessible accessibilityRole="image" accessibilityLabel={`Conference QR code for ${session.name}`}>
+          <QRCode value={published.joinUrl} size={132} quietZone={28} />
         </View>
-      </Section>
-      {preview ? (
-        <Section>
-          <Heading>Schedule preview</Heading>
-          {preview.warnings.map((warning) => <Message key={warning} error>{warning}</Message>)}
-          {preview.talks.length === 0 ? <Message error>Add at least one valid talk to publish.</Message> : null}
-          {preview.talks.map((talk) => (
-            <Copy key={talk.id}>{formatTime(talk.start)} to {formatTime(talk.end)} · {talk.title} · {talk.track} · {talk.room}</Copy>
-          ))}
-          {!name.trim() ? <Copy>Enter a conference name to publish.</Copy> : null}
-          <Action title="Publish conference" disabled={!name.trim() || !preview.talks.length || !!preview.warnings.length}
-            onPress={() => setPublished(onPublish(name.trim(), preview.talks))} />
-        </Section>
-      ) : null}
+        <View style={passStyles.details}>
+          <Label>JOIN LINK</Label><Text selectable style={passStyles.url}>{published.joinUrl}</Text>
+          <Copy>Attendees can scan this QR code or open the link in any browser.</Copy>
+        </View>
+      </View>
+    </Flow>
+  );
+
+  return (
+    <Flow step={session ? 'schedule' : 'create'} style={styles.stack}>
+      <Heading large>{session ? `Schedule for ${session.name}` : 'Create a conference'}</Heading>
+      {!session ? <Section>
+        <Copy>Create a private organizer session, then import a schedule for review.</Copy>
+        <Field label="Conference name" value={name} onChangeText={setName} maxLength={160} />
+        <Action title={busy ? 'Creating conference…' : 'Create conference'} onPress={createConference} disabled={busy} />
+      </Section> : <Section>
+        <Copy>Paste a schedule link or upload a PDF/image. It stays private until you confirm it.</Copy>
+        <Field label="Schedule link" value={sourceUrl} onChangeText={(value) => { setSourceUrl(value); setAsset(undefined); setDraft(undefined); }} autoCapitalize="none" keyboardType="url" placeholder="https://…" />
+        <View style={styles.row}>
+          <Action title="Choose PDF or image" onPress={chooseFile} secondary disabled={busy} />
+          {asset ? <Copy>Selected: {asset.name}</Copy> : null}
+        </View>
+        <Action title={busy ? 'Parsing schedule…' : 'Parse schedule'} onPress={parseSchedule} disabled={busy || (!sourceUrl.trim() && !asset)} />
+      </Section>}
+      {error ? <Message error>{error}</Message> : null}
+      {draft ? <Section>
+        <Heading>Review parsed schedule</Heading>
+        {draft.warnings.map((warning) => <Message key={warning} error>{warning}</Message>)}
+        {!draft.talks.length ? <Message error>No usable sessions were found. Try another source.</Message> : null}
+        {draft.talks.map((talk, index) => <Copy key={`${talk.title}-${index}`}>{displayTime(talk.start_time)} to {displayTime(talk.end_time)} · {talk.title} · {talk.room || 'Room TBA'}</Copy>)}
+        <Action title={busy ? 'Publishing…' : 'Confirm and publish'} onPress={publish} disabled={busy || !draft.talks.length} />
+      </Section> : null}
     </Flow>
   );
 }
@@ -73,5 +102,5 @@ export function Organizer({ onPublish }: { onPublish: (name: string, talks: Conf
 const passStyles = StyleSheet.create({
   pass: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 20, rowGap: 12 },
   details: { flexGrow: 1, flexBasis: 185, gap: 6, paddingVertical: 12 },
-  code: { color: colors.ink, fontSize: 32, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  url: { color: colors.ink, fontSize: 15, fontWeight: '700' },
 });

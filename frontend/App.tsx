@@ -125,7 +125,7 @@ export default function App() {
           </View>
           <MotionPreferences>
             <Flow step={screen}>
-              {mode === 'organizer' ? <Organizer onPublish={publish} /> : !conference ? (
+              {mode === 'organizer' ? <Organizer /> : !conference ? (
                 <JoinConference conferences={conferences} onJoin={changeConference} />
               ) : (
                 <View style={styles.stack}>
