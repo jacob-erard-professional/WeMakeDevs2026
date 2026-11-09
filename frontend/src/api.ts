@@ -77,7 +77,13 @@ export async function joinLiveConference(id: string, signal?: AbortSignal): Prom
   if (!response.ok) {
     throw new Error(response.status === 404 ? 'That conference is not available yet.' : 'Could not reach the conference server.');
   }
-  return conferenceFromSchedule(await response.json() as JoinResponse);
+  // A proxy or SPA fallback can answer 200 with HTML; surface that as a server problem rather
+  // than leaking the JSON parser's "Unexpected token" message.
+  const data = await response.json().catch(() => null) as JoinResponse | null;
+  if (!data || typeof data.conference_id !== 'string' || !Array.isArray(data.talks)) {
+    throw new Error('Could not reach the conference server.');
+  }
+  return conferenceFromSchedule(data);
 }
 
 export function conferenceFromSchedule(data: JoinResponse): Conference {
@@ -122,6 +128,21 @@ async function resumePart(resume: ResumeAsset): Promise<Blob | { uri: string; na
   return resume.file ?? new Blob([await (await fetch(resume.uri)).arrayBuffer()], { type });
 }
 
+export type ResumeProfile = {
+  headline: string; skills: string[]; interests: string[]; working_on: string; can_help_with: string; summary: string;
+};
+
+// Preview what a résumé contributes before saving. The server stores nothing for this call.
+export async function parseResume(resume: ResumeAsset, signal?: AbortSignal) {
+  const body = new FormData();
+  const part = await resumePart(resume);
+  if (part instanceof Blob) body.append('resume', part, resume.name);
+  else body.append('resume', part as unknown as Blob);
+  const response = await request(`${apiBase}/parse-resume`, { method: 'POST', body, signal }, 45000);
+  if (!response.ok) throw await apiError(response, 'Could not read the résumé.');
+  return response.json() as Promise<{ resume_profile: ResumeProfile; is_linkedin_pdf: boolean }>;
+}
+
 export async function saveLiveProfile(
   conference: Conference,
   profile: Attendee,
@@ -159,20 +180,21 @@ export async function saveLiveProfile(
     method: 'POST',
     headers: attendeeToken ? { Authorization: `Bearer ${attendeeToken}` } : undefined,
     body,
-  });
+  }, 45000);
   if (!response.ok) throw await apiError(response, 'Could not save your profile to the conference server.');
   const result = await response.json() as Partial<SaveProfileResult> & { attendee_id: string };
+  return { ...result, recommendations: normalizeRecommendations(result.recommendations) } satisfies SaveProfileResult;
+}
+
+// Fills in any list the server (or a stored copy from an older build) left out.
+export function normalizeRecommendations(value: unknown): LiveRecommendations {
+  const partial = (typeof value === 'object' && value !== null ? value : {}) as Partial<LiveRecommendations>;
+  const list = <T,>(items: T[] | undefined) => (Array.isArray(items) ? items : []);
   return {
-    ...result,
-    recommendations: {
-      talks: result.recommendations?.talks ?? [],
-      schedules: result.recommendations?.schedules ?? [],
-      attendees: {
-        similar: result.recommendations?.attendees?.similar ?? [],
-        matches: result.recommendations?.attendees?.matches ?? [],
-      },
-    },
-  } satisfies SaveProfileResult;
+    talks: list(partial.talks),
+    schedules: list(partial.schedules),
+    attendees: { similar: list(partial.attendees?.similar), matches: list(partial.attendees?.matches) },
+  };
 }
 
 async function apiError(response: Response, fallback: string) {

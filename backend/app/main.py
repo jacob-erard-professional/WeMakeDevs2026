@@ -768,8 +768,14 @@ async def save_user_data(
             )
     # Parse only résumé text that arrived in this request; stored text was parsed when saved.
     new_resume_text = uploaded_resume_text or payload.resume_text or ""
+    # The join form prefills bio/interests from POST /parse-resume first. When it did, skip the
+    # second LLM pass: it only fills empty fields and costs ~8 s against the platform's 15 s
+    # request limit. The raw resume text is still stored and embedded either way.
+    already_filled = bool(payload.bio.strip() and payload.interests)
     resume_profile = (
-        await parse_resume_traced(new_resume_text) if new_resume_text.strip() else ResumeProfile()
+        await parse_resume_traced(new_resume_text)
+        if new_resume_text.strip() and not already_filled
+        else ResumeProfile()
     )
     # Typed values win; the résumé only fills empty fields (skills/interests are unioned).
     merged = merge_resume_profile(payload.model_dump(mode="json"), resume_profile)
@@ -801,7 +807,10 @@ async def save_user_data(
         doc["resume_text"] = previous["resume_text"]
     await es_call(
         "save_attendee",
-        lambda: es.index(index="attendees", id=attendee_doc_id, document=doc, refresh="wait_for"),
+        # semantic_text embeds every text field on write; the client's 5 s default is too short.
+        lambda: es.options(request_timeout=30).index(
+            index="attendees", id=attendee_doc_id, document=doc, refresh="wait_for"
+        ),
     )
     recommendation_profile = doc | {
         "conference_id": payload.conference_id,

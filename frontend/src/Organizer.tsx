@@ -10,6 +10,7 @@ import { EntryPass } from './EntryPass';
 import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
 import { parsePastedSchedule, validScheduleDate } from './scheduleText';
+import { organizerSession } from './session';
 import { Action, Copy, Field, Heading, Label, Message, Section, TalkDetails, styles } from './ui';
 
 const sources = ['Schedule link', 'Image or PDF', 'Paste text'] as const;
@@ -47,19 +48,29 @@ export function Organizer({ onPublishSample, onTrySample }: {
   onPublishSample: (name: string, talks: ParsedTalk[]) => string;
   onTrySample: (code: string) => void;
 }) {
+  // A refresh must not lock the organizer out of the conference they just created: live
+  // sessions (token, event details, parsed draft, published flag) are restored from this
+  // browser's storage. Sample sessions stay in-app only.
+  const [stored] = useState(organizerSession.load);
   const [name, setName] = useState('');
-  const [date, setDate] = useState('');
-  const [venue, setVenue] = useState('');
-  const [description, setDescription] = useState('');
-  const [session, setSession] = useState<OrganizerSession | { name: string; sample: true }>();
+  const [date, setDate] = useState(stored?.date ?? '');
+  const [venue, setVenue] = useState(stored?.venue ?? '');
+  const [description, setDescription] = useState(stored?.description ?? '');
+  const [session, setSession] = useState<OrganizerSession | { name: string; sample: true } | undefined>(stored && {
+    conferenceId: stored.conferenceId, organizerToken: stored.organizerToken, name: stored.name,
+  });
   const [sampleMode, setSampleMode] = useState(false);
   const [source, setSource] = useState<Source>('Schedule link');
   const [sourceUrl, setSourceUrl] = useState('');
   const [asset, setAsset] = useState<ResumeAsset>();
   const [text, setText] = useState('');
-  const [draft, setDraft] = useState<Draft>();
+  const [draft, setDraft] = useState<Draft | undefined>(stored?.draft);
   const [editingTalk, setEditingTalk] = useState<number>();
-  const [publishedCode, setPublishedCode] = useState<string>();
+  const [publishedCode, setPublishedCode] = useState<string | undefined>(stored?.published ? stored.conferenceId : undefined);
+
+  function persist(live: OrganizerSession, changes: { draft?: Draft; published?: boolean }) {
+    organizerSession.save({ ...live, draft, published: !!publishedCode, date, venue, description, ...changes });
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const inProgress = useRef(false);
@@ -82,7 +93,11 @@ export function Organizer({ onPublishSample, onTrySample }: {
       setSession({ name: name.trim(), sample: true });
       return;
     }
-    void run(async () => setSession(await createLiveConference(name.trim())), 'Could not create the conference.');
+    void run(async () => {
+      const created = await createLiveConference(name.trim());
+      setSession(created);
+      persist(created, {});
+    }, 'Could not create the conference.');
   }
 
   async function chooseFile() {
@@ -123,7 +138,9 @@ export function Organizer({ onPublishSample, onTrySample }: {
       return;
     }
     void run(async () => {
-      setDraft(await parseLiveSchedule(session, source === 'Schedule link' ? sourceUrl.trim() : undefined, source === 'Image or PDF' ? asset : undefined));
+      const parsed = await parseLiveSchedule(session, source === 'Schedule link' ? sourceUrl.trim() : undefined, source === 'Image or PDF' ? asset : undefined);
+      setDraft(parsed);
+      persist(session, { draft: parsed });
     }, 'Could not import the schedule.');
   }
 
@@ -142,10 +159,13 @@ export function Organizer({ onPublishSample, onTrySample }: {
     void run(async () => {
       await confirmLiveSchedule(session, draft.talks);
       setPublishedCode(session.conferenceId);
+      persist(session, { published: true });
     }, 'Could not publish the schedule.');
   }
 
+  // Also "Start a new conference": forgets this browser's organizer session.
   function reset() {
+    organizerSession.clear();
     setPublishedCode(undefined);
     setSampleMode(false);
     setSession(undefined);
@@ -227,6 +247,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
           </>
         )}
         <Action title={busy ? 'Working…' : 'Preview schedule'} onPress={reviewSchedule} disabled={busy || !canReview} />
+        {'sample' in session ? null : <Action title="Start a new conference" onPress={reset} disabled={busy} secondary />}
       </Section>}
       {draft ? <Section>
         <Heading>Review schedule</Heading>

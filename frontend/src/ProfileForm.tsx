@@ -1,7 +1,8 @@
 import { getDocumentAsync } from 'expo-document-picker';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
+import { parseResume } from './api';
 import { AvailabilityTimeline } from './AvailabilityTimeline';
 import { formatTime, parseTime, talkDay } from './conference';
 import type { Attendee, Conference, TimeRange } from './conference';
@@ -14,23 +15,34 @@ const blank: Attendee = {
   resumePublic: false, discoverable: false, unavailable: [],
 };
 
-export function ProfileForm({ initial, conference, onSave, onStepChange, onDraftChange, onCancel }: {
+type ProfileStep = 'about' | 'availability';
+
+// A picked file cannot be restored after reload. A saved résumé remains on the server.
+export type PreviousResume = { name: string; onServer: boolean };
+
+export function ProfileForm({ initial, conference, previousResume, step, onSave, onStepChange, onChange, onCancel }: {
   initial?: Attendee;
   conference: Conference;
+  previousResume?: PreviousResume;
+  step: ProfileStep;
   onSave: (profile: Attendee) => Promise<void>;
-  onStepChange: () => void;
-  onDraftChange: (profile: Attendee) => void;
+  onStepChange: (step: ProfileStep) => void;
+  onChange: (profile: Attendee) => void;
   onCancel?: () => void;
 }) {
   const [profile, setProfile] = useState(initial ?? blank);
-  const currentProfile = useRef(profile);
+  const latest = useRef(profile);
   const saveInProgress = useRef(false);
-  const [step, setStep] = useState<'about' | 'availability'>('about');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [mode, setMode] = useState<'available' | 'unavailable'>('unavailable');
+  const [reading, setReading] = useState(false);
+  const [pickedUp, setPickedUp] = useState<string[]>([]);
+  const [resumeNote, setResumeNote] = useState('');
+  const parseRequest = useRef(0);
+  useEffect(() => () => { parseRequest.current += 1; }, []);
   const days = [...new Set(conference.talks.flatMap((talk) => talkDay(talk.startsAt) ?? []))].sort();
   const [day, setDay] = useState(days[0]);
   const dayTalks = conference.talks.filter((talk) => !day || talkDay(talk.startsAt) === day);
@@ -38,10 +50,10 @@ export function ProfileForm({ initial, conference, onSave, onStepChange, onDraft
   const timelineEnd = Math.ceil(Math.max(18 * 60, ...dayTalks.map((talk) => talk.end)) / 15) * 15;
 
   function update(changes: Partial<Attendee>) {
-    const next = { ...currentProfile.current, ...changes };
-    currentProfile.current = next;
+    const next = { ...latest.current, ...changes };
+    latest.current = next;
     setProfile(next);
-    onDraftChange(next);
+    onChange(next);
   }
 
   async function pickResume() {
@@ -52,11 +64,52 @@ export function ProfileForm({ initial, conference, onSave, onStepChange, onDraft
       });
       if (!result.canceled) {
         const { uri, name, mimeType, file } = result.assets[0];
-        update({ resume: { uri, name, mimeType, file } });
+        const resume = { uri, name, mimeType, file };
+        update({ resume });
+        if (!conference.sample) void prefillFromResume(resume);
       }
     } catch {
       setError('Could not open the file picker. Try again or continue with a bio.');
     }
+  }
+
+  // Fill only fields the attendee has not typed in; never overwrite their words.
+  async function prefillFromResume(resume: NonNullable<Attendee['resume']>) {
+    const requestId = ++parseRequest.current;
+    setReading(true);
+    setPickedUp([]);
+    setResumeNote('');
+    try {
+      const { resume_profile: parsed } = await parseResume(resume);
+      if (requestId !== parseRequest.current) return;
+      const current = latest.current;
+      const changes: Partial<Attendee> = {};
+      const found: string[] = [];
+      const summary = parsed.summary.trim()
+        || [parsed.headline.trim(), parsed.working_on.trim()].filter(Boolean).join('. ');
+      if (!current.bio.trim() && summary) { changes.bio = summary; found.push('a bio'); }
+      const topics = [...parsed.interests, ...parsed.skills].map((item) => item.trim()).filter(Boolean);
+      const unique = topics.filter((item, index) => topics.findIndex((other) => other.toLowerCase() === item.toLowerCase()) === index);
+      if (!current.interests.trim() && unique.length) { changes.interests = unique.join(', '); found.push(`${unique.length} interests`); }
+      if (Object.keys(changes).length) update(changes);
+      setPickedUp(found);
+      setResumeNote(found.length ? '' : 'We couldn’t pull anything new from that file. Add a bio and interests below.');
+    } catch (reason) {
+      if (requestId !== parseRequest.current) return;
+      setResumeNote(reason instanceof Error
+        ? `${reason.message} Your résumé will still be used when you save.`
+        : 'We couldn’t read the résumé now. It will still be used when you save.');
+    } finally {
+      if (requestId === parseRequest.current) setReading(false);
+    }
+  }
+
+  function removeResume() {
+    parseRequest.current += 1;
+    setReading(false);
+    setPickedUp([]);
+    setResumeNote('');
+    update({ resume: undefined, resumePublic: false });
   }
 
   function addBlock() {
@@ -99,14 +152,16 @@ export function ProfileForm({ initial, conference, onSave, onStepChange, onDraft
     return true;
   }
 
-  function changeStep(next: typeof step) {
+  function changeStep(next: ProfileStep) {
     setError('');
-    setStep(next);
-    onStepChange();
+    onStepChange(next);
   }
 
+  // A saved résumé still counts: the server kept its text and reuses it when none is sent.
+  const resumeOnServer = !profile.resume && previousResume?.onServer;
+
   function continueToAvailability() {
-    if (!profile.name.trim() || (!profile.bio.trim() && !profile.resume)) {
+    if (!profile.name.trim() || (!profile.bio.trim() && !profile.resume && !resumeOnServer)) {
       setError('Enter your name and add a bio or choose a résumé.');
       return;
     }
@@ -127,14 +182,21 @@ export function ProfileForm({ initial, conference, onSave, onStepChange, onDraft
   async function save() {
     if (saveInProgress.current) return;
     if (start.trim() || end.trim()) {
-      setError('Add the pending time block or clear both time fields before continuing.');
-      return;
+      const from = parseTime(start);
+      const to = end.trim() === '24:00' ? 1440 : parseTime(end);
+      if (from === null || to === null || from >= to) {
+        setError('Enter a complete time range or clear both time fields.');
+        return;
+      }
+      if (!markRange({ start: from, end: to })) return;
+      setStart('');
+      setEnd('');
     }
     saveInProgress.current = true;
     setSaving(true);
     setError('');
     try {
-      await onSave(profile);
+      await onSave(latest.current);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save your profile.');
     } finally {
@@ -152,20 +214,24 @@ export function ProfileForm({ initial, conference, onSave, onStepChange, onDraft
           <Action title="Use sample profile" onPress={() => { update({ ...sampleAttendee, unavailable: profile.unavailable }); setError(''); }} secondary />
         ) : null}
         <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
-        <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
-        <Field label="Email (optional, shared only with connections you accept)" value={profile.email} onChangeText={(email) => update({ email })} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" maxLength={320} />
-        <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
-        <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
-        <Field label="What do you want to see?" multiline value={profile.lookingFor} onChangeText={(lookingFor) => update({ lookingFor })} placeholder="Talks, people, or topics you’re here for" maxLength={2000} />
-        <Field label="LinkedIn profile URL (optional)" value={profile.linkedin} onChangeText={(linkedin) => update({ linkedin })} autoCapitalize="none" keyboardType="url" maxLength={300} />
-        <Copy>Your résumé is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
+        <Copy>Start with your résumé or LinkedIn PDF (Profile → More → Save to PDF) and we’ll fill in what we can. It is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
+        {previousResume && !profile.resume ? (
+          <Message>
+            {previousResume.onServer
+              ? `Your résumé ${previousResume.name} is already on file from your last save. Re-attach it only if it changed.`
+              : `Files don’t survive between visits, so ${previousResume.name} needs to be re-attached before you save.`}
+          </Message>
+        ) : null}
         <View style={styles.row}>
-          <Action title="Choose résumé PDF" onPress={pickResume} secondary />
-          {profile.resume ? <Action title="Remove résumé" onPress={() => update({ resume: undefined, resumePublic: false })} secondary /> : null}
+          <Action title={previousResume && !profile.resume ? 'Re-attach résumé PDF' : 'Choose résumé PDF'} onPress={pickResume} secondary />
+          {profile.resume ? <Action title="Remove résumé" onPress={removeResume} secondary /> : null}
         </View>
         {profile.resume ? (
           <View style={styles.stack}>
             <Copy>Selected file: {profile.resume.name}</Copy>
+            {reading ? <Message>Reading your résumé… you can keep filling in the form.</Message> : null}
+            {pickedUp.length ? <Message>We picked up {pickedUp.join(' and ')} from your résumé. Edit anything below.</Message> : null}
+            {resumeNote ? <Message>{resumeNote}</Message> : null}
             <View style={styles.row}>
               <Action title="Private résumé" selected={!profile.resumePublic} onPress={() => update({ resumePublic: false })} secondary />
               <Action title="Public résumé" selected={profile.resumePublic} onPress={() => update({ resumePublic: true })} secondary />
@@ -173,6 +239,12 @@ export function ProfileForm({ initial, conference, onSave, onStepChange, onDraft
             <Copy>Sharing preference: {profile.resumePublic ? 'Public' : 'Private'}. The live sharing policy is pending.</Copy>
           </View>
         ) : null}
+        <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
+        <Field label="Email (optional, shared only with connections you accept)" value={profile.email} onChangeText={(email) => update({ email })} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" maxLength={320} />
+        <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
+        <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
+        <Field label="What do you want to see?" multiline value={profile.lookingFor} onChangeText={(lookingFor) => update({ lookingFor })} placeholder="Talks, people, or topics you’re here for" maxLength={2000} />
+        <Field label="LinkedIn profile URL (optional)" value={profile.linkedin} onChangeText={(linkedin) => update({ linkedin })} autoCapitalize="none" keyboardType="url" maxLength={300} />
         <Action title={profile.discoverable ? 'Discovery on' : 'Discovery off'} selected={profile.discoverable}
           onPress={() => update({ discoverable: !profile.discoverable })} secondary />
         <Copy>Turn on discovery to appear in and receive people suggestions for this conference.</Copy>

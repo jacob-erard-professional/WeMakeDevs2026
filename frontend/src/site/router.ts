@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 
-export type Page = 'home' | 'events' | 'talks' | 'organizers' | 'join';
+export type Page = 'home' | 'events' | 'talks' | 'organizers' | 'join' | 'myConferences';
 
 export const paths: Record<Page, string> = {
   home: '/',
@@ -11,6 +11,7 @@ export const paths: Record<Page, string> = {
   talks: '/talks',
   organizers: '/organizers',
   join: '/join',
+  myConferences: '/my-conferences',
 };
 
 // /join and /join/<code> both belong to the attendee flow; unknown paths fall back to home.
@@ -37,8 +38,13 @@ export function useRoute() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const navigate = useCallback((next: string) => {
-    if (isWeb && window.location.pathname !== next) window.history.pushState(null, '', next);
+  // `replace` swaps the current entry instead of pushing one, for redirects (e.g. a returning
+  // attendee sent straight to their plan) that should not add a Back stop.
+  const navigate = useCallback((next: string, options?: { replace?: boolean }) => {
+    if (isWeb && window.location.pathname !== next) {
+      if (options?.replace) window.history.replaceState(null, '', next);
+      else window.history.pushState(null, '', next);
+    }
     setPath(next);
     if (isWeb) window.scrollTo?.(0, 0);
   }, []);

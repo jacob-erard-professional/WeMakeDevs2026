@@ -21,9 +21,10 @@ function RoleChoice({ title, description, onPress }: { title: string; descriptio
   );
 }
 
-export function Landing({ navigate, resumeConference }: {
+export function Landing({ navigate, resumeConference, hasConferences }: {
   navigate: (path: string) => void;
-  resumeConference?: { name: string; code: string };
+  resumeConference?: { name: string; path: string };
+  hasConferences?: boolean;
 }) {
   return (
     <Container style={home.content}>
@@ -33,15 +34,15 @@ export function Landing({ navigate, resumeConference }: {
         </Text>
       </View>
       <View style={home.choices}>
-        <RoleChoice title="I’m an attendee" description="Join a conference and explore its schedule."
-          onPress={() => navigate(paths.join)} />
+        <RoleChoice title="I’m an attendee" description={hasConferences ? 'Open one of your conferences or join another.' : 'Join a conference and explore its schedule.'}
+          onPress={() => navigate(hasConferences ? paths.myConferences : paths.join)} />
         <RoleChoice title="I’m an organizer" description="Set up a conference and share it with attendees."
           onPress={() => navigate(paths.organizers)} />
       </View>
       <View style={home.discovery}>
         {resumeConference ? (
           <View><Action title={`Return to ${resumeConference.name}`}
-            onPress={() => navigate(`${paths.join}/${encodeURIComponent(resumeConference.code)}`)} secondary /></View>
+            onPress={() => navigate(resumeConference.path)} secondary /></View>
         ) : null}
         <View><Action title="Search Talks" onPress={() => navigate(paths.talks)} /></View>
         <View><Action title="Browse the event archive" onPress={() => navigate(paths.events)} secondary /></View>
