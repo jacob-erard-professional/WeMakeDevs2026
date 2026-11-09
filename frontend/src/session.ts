@@ -22,6 +22,7 @@ export type AttendeeSession = {
   sample?: boolean;
   section?: string;
   draftStep?: 'about' | 'availability';
+  attendeeId?: string;
   attendeeToken?: string;
   // The profile last accepted by the server (or the demo), and any unsaved edits.
   saved?: StoredProfile;
@@ -112,6 +113,7 @@ function isAttendeeSession(value: unknown): value is AttendeeSession {
     && (value.sample === undefined || typeof value.sample === 'boolean')
     && (value.section === undefined || isString(value.section))
     && (value.draftStep === undefined || value.draftStep === 'about' || value.draftStep === 'availability')
+    && (value.attendeeId === undefined || isString(value.attendeeId))
     && (value.attendeeToken === undefined || isString(value.attendeeToken))
     && (value.saved === undefined || isStoredProfile(value.saved))
     && (value.draft === undefined || isStoredProfile(value.draft))

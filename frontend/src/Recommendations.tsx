@@ -71,7 +71,7 @@ function matchLabel(talk: RankedTalk) {
   return `${Math.round(talk.relevance * 100)}% match`;
 }
 
-export function Recommendations({ conference, profile, attendeeToken, recommendations, requested, onRequest, onEdit, section, onSection }: {
+export function Recommendations({ conference, profile, attendeeToken, recommendations, requested, onRequest, onEdit, onPeople, section, onSection }: {
   conference: Conference;
   profile: Attendee;
   attendeeToken?: string;
@@ -79,6 +79,8 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
   requested: string[];
   onRequest: (id: string) => void;
   onEdit: (talkId?: string) => void;
+  // Called with refreshed live people so the parent can keep them with the stored session.
+  onPeople?: (attendees: LiveRecommendations['attendees']) => void;
   section: RecommendationSection;
   onSection: (section: RecommendationSection) => void;
 }) {
@@ -110,6 +112,7 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
       const results = await searchSuggestedPeople(conference.code, attendeeToken, query, controller.signal);
       if (!controller.signal.aborted) {
         setPeopleResults(results);
+        onPeople?.(results);
         setAppliedNote(query);
         setRefreshed(true);
       }

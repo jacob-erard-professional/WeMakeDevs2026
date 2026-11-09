@@ -119,6 +119,7 @@ export default function App() {
   const [requested, setRequested] = useState<string[]>([]);
   const [section, setSection] = useState<RecommendationSection>('My schedule');
   const [remembered, setRemembered] = useState(attendeeSessions.list);
+  const [attendeeId, setAttendeeId] = useState<string>();
   const [attendeeToken, setAttendeeToken] = useState<string>();
   const [recommendations, setRecommendations] = useState<LiveRecommendations>();
   const [resumeTalk, setResumeTalk] = useState<string>();
@@ -154,6 +155,7 @@ export default function App() {
     const saved = stored?.saved ? restore(stored.saved) : undefined;
     const unsaved = stored?.draft ? restore(stored.draft) : undefined;
     const resumeName = unsaved?.resumeName ?? saved?.resumeName;
+    setAttendeeId(stored?.attendeeId);
     setAttendeeToken(stored?.attendeeToken);
     setRecommendations(saved && stored?.recommendations ? normalizeRecommendations(stored.recommendations) : undefined);
     setProfile(saved?.profile);
@@ -182,6 +184,7 @@ export default function App() {
     if (conference?.code === code) {
       scope.current = undefined;
       setConference(undefined);
+      setAttendeeId(undefined);
     }
     setRemembered(attendeeSessions.list());
     return true;
@@ -212,11 +215,13 @@ export default function App() {
     if (savingProfiles.current.has(code)) throw new Error('Your profile is already being saved.');
     savingProfiles.current.add(code);
     let token = attendeeToken;
+    let id = attendeeId;
     let live: LiveRecommendations | undefined;
     try {
       if (!activeConference.sample) {
         const result = await saveLiveProfile(activeConference, next, attendeeToken);
         token = result.attendee_token ?? token;
+        id = result.attendee_id;
         live = result.recommendations;
       }
     } finally {
@@ -224,18 +229,27 @@ export default function App() {
     }
     const resumeName = next.resume?.name ?? previousResume?.name;
     attendeeSessions.update(code, {
-      attendeeToken: token, saved: toStoredProfile(next, previousResume?.name),
+      attendeeId: id, attendeeToken: token, saved: toStoredProfile(next, previousResume?.name),
       draft: undefined, draftStep: undefined, recommendations: live,
     });
     setRemembered(attendeeSessions.list());
     if (scope.current?.code !== code) return;
     const saved = { ...next, resume: undefined };
     setRecommendations(live);
+    setAttendeeId(id);
     setAttendeeToken(token);
     setProfile(saved);
     setDraft(saved);
     setPreviousResume(resumeName ? { name: resumeName, onServer: !activeConference.sample } : undefined);
     if (currentPath.current === path) navigate(joinPath(code, resumeTalk ? 'schedule' : 'plan'));
+  }
+
+  // Refreshed people replace the stored copy so a reload keeps showing them.
+  function keepPeople(attendees: LiveRecommendations['attendees']) {
+    if (!activeConference) return;
+    const next = { ...normalizeRecommendations(recommendations), attendees };
+    setRecommendations(next);
+    attendeeSessions.update(activeConference.code, { recommendations: next });
   }
 
   function cancelDraft() {
@@ -325,7 +339,7 @@ export default function App() {
                         setSection(next);
                         attendeeSessions.update(activeConference.code, { section: next });
                       }}
-                      onEdit={editProfile}
+                      onEdit={editProfile} onPeople={keepPeople}
                       onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
                   ) : null}
                 </View>
