@@ -22,13 +22,18 @@ set -a
 source "$env_file"
 set +a
 
-args=()
+tmp="$(mktemp)"
+chmod 600 "$tmp"
+trap 'rm -f "$tmp"' EXIT
+
+key_count=0
 for key in "${keys[@]}"; do
   if [[ -n "${!key:-}" ]]; then
-    args+=("--from-literal=${key}=${!key}")
+    printf '%s=%s\n' "$key" "${!key}" >> "$tmp"
+    ((key_count += 1))
   fi
 done
 
-kubectl -n "$namespace" create secret generic app-env "${args[@]}" --dry-run=client -o yaml \
+kubectl -n "$namespace" create secret generic app-env --from-env-file="$tmp" --dry-run=client -o yaml \
   | kubectl apply -f - >/dev/null
-echo "Secret app-env updated in $namespace with ${#args[@]} keys."
+echo "Secret app-env updated in $namespace with $key_count keys."
