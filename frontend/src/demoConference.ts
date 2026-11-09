@@ -10,7 +10,7 @@ export const sampleSchedule = [
 ].join('\n');
 
 export const demoConference: Conference = {
-  name: 'Cloud Native Hackathon',
+  name: 'Cloud Native Conference',
   code: 'cloud-native',
   talks: parseSchedule(sampleSchedule).talks,
 };

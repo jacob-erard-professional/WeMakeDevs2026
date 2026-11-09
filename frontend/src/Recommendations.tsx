@@ -5,17 +5,19 @@ import { buildSchedule, formatTime, matchingTopics, recommendTalks } from './con
 import type { Attendee, Conference } from './conference';
 import { demoConference, demoPeople } from './demoConference';
 import { Flow } from './Flow';
+import { ScheduleBrowser } from './ScheduleBrowser';
 import { Action, Copy, Heading, Label, Message, styles } from './ui';
 
-const sections = ['My schedule', 'Talks', 'People'] as const;
+const sections = ['My schedule', 'Event schedule', 'Talks', 'People'] as const;
 type Section = typeof sections[number];
 
-export function Recommendations({ conference, profile, requested, onRequest, onEdit }: {
+export function Recommendations({ conference, profile, attendeeToken, requested, onRequest, onEdit }: {
   conference: Conference;
   profile: Attendee;
+  attendeeToken?: string;
   requested: string[];
   onRequest: (id: string) => void;
-  onEdit: () => void;
+  onEdit: (talkId?: string) => void;
 }) {
   const [section, setSection] = useState<Section>('My schedule');
   const [refreshed, setRefreshed] = useState(false);
@@ -33,10 +35,12 @@ export function Recommendations({ conference, profile, requested, onRequest, onE
       <Copy>Welcome, {profile.name}. Here’s what fits your day.</Copy>
       <View style={styles.row}>
         {sections.map((item) => <Action key={item} title={item} selected={section === item} onPress={() => setSection(item)} secondary />)}
-        <Action title="Edit profile" onPress={onEdit} secondary />
+        <Action title="Edit profile" onPress={() => onEdit()} secondary />
       </View>
       <Flow step={section} style={program.results}>
-        {section === 'People' ? (
+        {section === 'Event schedule' ? (
+          <ScheduleBrowser conference={conference} attendeeToken={attendeeToken} onProfile={onEdit} />
+        ) : section === 'People' ? (
           <>
             <Heading>People to meet</Heading>
             <Action title="Refresh people" onPress={() => setRefreshed(true)} secondary />
