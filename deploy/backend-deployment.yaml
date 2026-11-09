@@ -26,6 +26,10 @@ spec:
           env:
             - name: OTEL_SERVICE_NAME
               value: conference-api
+            # The frontend's nginx serves the API under /api and strips the prefix;
+            # FastAPI needs it to build /api/docs and openapi.json links.
+            - name: ROOT_PATH
+              value: /api
           # ES_URL, ES_API_KEY, OPENAI_API_KEY, ORGANIZER_API_KEY and OTEL_EXPORTER_OTLP_* come
           # from Secret app-env, created outside git by scripts/push-secrets.sh.
           envFrom:
