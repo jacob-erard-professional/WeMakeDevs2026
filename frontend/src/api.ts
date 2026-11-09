@@ -24,14 +24,30 @@ export type ParsedTalk = {
 };
 export type ArchiveTalk = { title: string; conference?: string; year?: number; url?: string; video_url?: string };
 
-async function request(url: string, options: RequestInit = {}, timeoutMs = 15000) {
+type ApiResponse = {
+  ok: boolean;
+  status: number;
+  body: unknown;
+  parseError?: unknown;
+};
+
+async function request(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<ApiResponse> {
   const controller = new AbortController();
   const cancel = () => controller.abort();
   if (options.signal?.aborted) cancel();
   options.signal?.addEventListener('abort', cancel);
   const timer = setTimeout(cancel, timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const text = await response.text();
+    let body: unknown;
+    let parseError: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch (error) {
+      parseError = error;
+    }
+    return { ok: response.ok, status: response.status, body, parseError };
   } catch (error) {
     if (controller.signal.aborted && !options.signal?.aborted) throw new Error('The server took too long. Try again.');
     throw error;
@@ -39,6 +55,11 @@ async function request(url: string, options: RequestInit = {}, timeoutMs = 15000
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', cancel);
   }
+}
+
+function responseJson<T>(response: ApiResponse): T {
+  if (response.parseError !== undefined) throw response.parseError;
+  return response.body as T;
 }
 
 function venueMinutes(timestamp: string) {
@@ -57,7 +78,7 @@ export async function joinLiveConference(id: string, signal?: AbortSignal): Prom
   if (!response.ok) {
     throw new Error(response.status === 404 ? 'That conference is not available yet.' : 'Could not reach the conference server.');
   }
-  const data = await response.json() as JoinResponse;
+  const data = responseJson<JoinResponse>(response);
   const talks: Talk[] = data.talks.map((talk) => ({
     id: talk.talk_id,
     title: talk.title,
@@ -77,7 +98,7 @@ export async function loadRelatedTalks(conferenceId: string, talkId: string, tok
     { headers: { Authorization: `Bearer ${token}` }, signal },
   );
   if (!response.ok) throw await apiError(response, 'Could not load similar past talks.');
-  const result = await response.json() as { talks: ArchiveTalk[] };
+  const result = responseJson<{ talks: ArchiveTalk[] }>(response);
   return result.talks;
 }
 
@@ -121,11 +142,13 @@ export async function saveLiveProfile(
     body,
   });
   if (!response.ok) throw await apiError(response, 'Could not save your profile to the conference server.');
-  return response.json() as Promise<{ attendee_token?: string }>;
+  return responseJson<{ attendee_token?: string }>(response);
 }
 
-async function apiError(response: Response, fallback: string) {
-  const body = await response.json().catch(() => null) as { detail?: unknown } | null;
+async function apiError(response: ApiResponse, fallback: string) {
+  const body = response.parseError === undefined
+    ? response.body as { detail?: unknown } | null
+    : null;
   return new Error(typeof body?.detail === 'string' ? body.detail : fallback);
 }
 
@@ -134,7 +157,7 @@ export async function createLiveConference(name: string): Promise<OrganizerSessi
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
   });
   if (!response.ok) throw await apiError(response, 'Could not create the conference.');
-  const body = await response.json() as { conference_id: string; organizer_token: string };
+  const body = responseJson<{ conference_id: string; organizer_token: string }>(response);
   return { conferenceId: body.conference_id, organizerToken: body.organizer_token, name };
 }
 
@@ -154,7 +177,7 @@ export async function parseLiveSchedule(
   } else throw new Error('Choose a schedule link, image, or PDF first.');
   const response = await request(`${apiBase}/upload-schedule?${query}`, options, 90000);
   if (!response.ok) throw await apiError(response, 'Could not parse the schedule.');
-  return response.json() as Promise<{ talks: ParsedTalk[]; warnings: string[] }>;
+  return responseJson<{ talks: ParsedTalk[]; warnings: string[] }>(response);
 }
 
 export async function confirmLiveSchedule(session: OrganizerSession, talks: ParsedTalk[]) {
@@ -164,5 +187,5 @@ export async function confirmLiveSchedule(session: OrganizerSession, talks: Pars
     body: JSON.stringify({ conference_id: session.conferenceId, talks }),
   }, 90000);
   if (!response.ok) throw await apiError(response, 'Could not publish the schedule.');
-  return response.json() as Promise<{ join_url: string; qr_code_data_url: string }>;
+  return responseJson<{ join_url: string; qr_code_data_url: string }>(response);
 }
