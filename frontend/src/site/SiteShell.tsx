@@ -57,6 +57,7 @@ export function SiteShell({ page, navigate, scrollRef, children }: PropsWithChil
       <NavLink title="Home" icon="⌂" current={page === 'home'} onPress={() => go('home')} compact={mobile} />
       <NavLink title="Talks" icon="⌕" current={page === 'talks'} onPress={() => go('talks')} compact={mobile} />
       <NavLink title="My conferences" icon="☰" current={page === 'myConferences'} onPress={() => go('myConferences')} compact={mobile} />
+      <NavLink title="Organizers" icon="◫" current={page === 'organizers'} onPress={() => go('organizers')} compact={mobile} />
       <NavLink title="Join" icon="✦" current={page === 'join'} onPress={() => go('join')} compact={mobile} />
     </>
   );

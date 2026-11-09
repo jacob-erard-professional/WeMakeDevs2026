@@ -194,3 +194,23 @@ def test_wrong_organizer_token_401(fake_es) -> None:
         )
 
     assert excinfo.value.status_code == 401
+
+
+def test_stale_indexing_is_reported_as_failed() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.main import STALE_SCHEDULE_ERROR, effective_schedule_status
+
+    fresh = (datetime.now(UTC) - timedelta(seconds=30)).isoformat()
+    stale = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+
+    assert effective_schedule_status(
+        {"schedule_status": "indexing", "schedule_updated_at": fresh}, False
+    ) == ("indexing", None)
+    assert effective_schedule_status(
+        {"schedule_status": "indexing", "schedule_updated_at": stale}, False
+    ) == ("failed", STALE_SCHEDULE_ERROR)
+    assert effective_schedule_status({"schedule_status": "indexing"}, False)[0] == "failed"
+    assert effective_schedule_status({"schedule_status": "ready"}, True) == ("ready", None)
+    assert effective_schedule_status({}, True) == ("ready", None)
+    assert effective_schedule_status({}, False) == ("none", None)

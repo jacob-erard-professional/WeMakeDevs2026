@@ -3,7 +3,9 @@ import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { confirmLiveSchedule, createLiveConference, parseLiveSchedule } from './api';
+import { venueMinutes } from './api';
 import type { OrganizerSession, ParsedTalk } from './api';
+import { ScheduleGrid } from './ScheduleGrid';
 import type { ResumeAsset } from './conference';
 import { sampleSchedule } from './demoConference';
 import { EntryPass } from './EntryPass';
@@ -11,7 +13,8 @@ import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
 import { parsePastedSchedule, validScheduleDate } from './scheduleText';
 import { organizerSession } from './session';
-import { Action, Copy, Field, Heading, Label, Message, Section, TalkDetails, styles } from './ui';
+import { OrganizerIntro } from './site/OrganizersPage';
+import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 const sources = ['Schedule link', 'Image or PDF', 'Paste text'] as const;
 type Source = typeof sources[number];
@@ -163,6 +166,13 @@ export function Organizer({ onPublishSample, onTrySample }: {
     }, 'Could not publish the schedule.');
   }
 
+  // Return to the review screen for this conference; the session and its sessions stay put.
+  function backToDashboard() {
+    setPublishedCode(undefined);
+    setError('');
+    if (session && !('sample' in session)) persist(session, { published: false });
+  }
+
   // Also "Start a new conference": forgets this browser's organizer session.
   function reset() {
     organizerSession.clear();
@@ -197,7 +207,8 @@ export function Organizer({ onPublishSample, onTrySample }: {
     return (
       <Flow step="published">
         <EntryPass name={session.name} code={publishedCode} link={joinUrl(publishedCode)}
-          details={[date, venue, description].filter(Boolean).join(' · ')} onReset={reset}
+          details={[date, venue].filter(Boolean).join(' · ')} onReset={reset}
+          onBack={backToDashboard}
           onTrySample={'sample' in session ? () => onTrySample(publishedCode) : undefined} />
       </Flow>
     );
@@ -209,6 +220,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
 
   return (
     <Flow step={session ? 'schedule' : 'details'} style={styles.stack}>
+      <OrganizerIntro />
       <Label>{session ? 'Step 2 of 2 · Schedule' : 'Step 1 of 2 · Event details'}</Label>
       <Heading large>{session ? 'Add your sessions' : 'Create a conference'}</Heading>
       {sampleMode ? <Message>Sample mode. This conference stays in this app session.</Message> : null}
@@ -253,26 +265,38 @@ export function Organizer({ onPublishSample, onTrySample }: {
         <Heading>Review schedule</Heading>
         {draft.warnings.map((warning, index) => <Message key={index} error>{warning}</Message>)}
         {!draft.talks.length ? <Message error>No usable sessions were found. Try another source.</Message> : null}
-        {draft.talks.map((talk, index) => (
-          <View key={index} style={styles.stack}>
-            <Heading>{talk.title || 'Untitled session'}</Heading>
-            <Copy>{displayTime(talk.start_time)} to {displayTime(talk.end_time)} · {talk.room || 'Room TBA'}</Copy>
-            {editingTalk !== index && talk.abstract ? <TalkDetails title={talk.title} abstract={talk.abstract} /> : null}
-            <Action title={editingTalk === index ? 'Done editing' : `Edit session ${index + 1}`}
-              onPress={() => setEditingTalk(editingTalk === index ? undefined : index)} disabled={busy} secondary />
-            {editingTalk === index ? (
-              <>
-                <Field label="Session title" value={talk.title} editable={!busy} onChangeText={(title) => editTalk(index, { title })} />
-                <Field label="Room" value={talk.room ?? ''} editable={!busy} onChangeText={(room) => editTalk(index, { room })} />
-                <Field label="Starts at (ISO timestamp)" value={talk.start_time} editable={!busy} autoCapitalize="none"
-                  onChangeText={(start_time) => editTalk(index, { start_time })} />
-                <Field label="Ends at (ISO timestamp)" value={talk.end_time} editable={!busy} autoCapitalize="none"
-                  onChangeText={(end_time) => editTalk(index, { end_time })} />
-                <Field label="Abstract" multiline value={talk.abstract ?? ''} editable={!busy} onChangeText={(abstract) => editTalk(index, { abstract })} />
-              </>
-            ) : null}
-          </View>
-        ))}
+        <Copy>Sessions are laid out by time and room. Choose a session to edit it.</Copy>
+        <ScheduleGrid
+          talks={draft.talks.map((talk, index) => ({
+            id: String(index),
+            title: talk.title,
+            room: talk.room,
+            track: talk.track?.join(', '),
+            speakers: talk.speakers,
+            start: venueMinutes(talk.start_time),
+            end: venueMinutes(talk.end_time),
+            startsAt: talk.start_time,
+          }))}
+          onSelect={(talk) => { if (!busy) setEditingTalk(editingTalk === Number(talk.id) ? undefined : Number(talk.id)); }}
+        />
+        {editingTalk !== undefined && draft.talks[editingTalk] ? (() => {
+          const index = editingTalk;
+          const talk = draft.talks[index];
+          return (
+            <View style={styles.stack}>
+              <Heading>{talk.title || 'Untitled session'}</Heading>
+              <Copy>{displayTime(talk.start_time)} to {displayTime(talk.end_time)} · {talk.room || 'Room TBA'}</Copy>
+              <Action title="Done editing" onPress={() => setEditingTalk(undefined)} disabled={busy} secondary />
+              <Field label="Session title" value={talk.title} editable={!busy} onChangeText={(title) => editTalk(index, { title })} />
+              <Field label="Room" value={talk.room ?? ''} editable={!busy} onChangeText={(room) => editTalk(index, { room })} />
+              <Field label="Starts at (ISO timestamp)" value={talk.start_time} editable={!busy} autoCapitalize="none"
+                onChangeText={(start_time) => editTalk(index, { start_time })} />
+              <Field label="Ends at (ISO timestamp)" value={talk.end_time} editable={!busy} autoCapitalize="none"
+                onChangeText={(end_time) => editTalk(index, { end_time })} />
+              <Field label="Abstract" multiline value={talk.abstract ?? ''} editable={!busy} onChangeText={(abstract) => editTalk(index, { abstract })} />
+            </View>
+          );
+        })() : null}
         {invalidTalks ? <Message error>Each session needs a title and valid start and end times with a time zone offset.</Message> : null}
         <Action title={busy ? 'Publishing…' : 'Confirm and publish'} onPress={publish} disabled={busy || !canPublish} />
       </Section> : null}

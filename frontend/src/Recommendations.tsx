@@ -3,12 +3,12 @@ import { StyleSheet, View } from 'react-native';
 
 import type { ApiPerson, ApiTalk, LiveRecommendations } from './api';
 import { searchSuggestedPeople } from './api';
-import { buildSchedule, formatTime, matchingTopics, recommendTalks } from './conference';
+import { formatTime, matchingTopics, recommendTalks } from './conference';
 import type { Attendee, Conference, Talk } from './conference';
 import { demoPeople } from './demoConference';
 import { Flow } from './Flow';
+import { MyPlan } from './MyPlan';
 import { ScheduleBrowser } from './ScheduleBrowser';
-import { ScheduleColumns } from './ScheduleColumns';
 import { Action, colors, Copy, Field, Heading, Label, Message, TalkDetails, styles } from './ui';
 
 const sections = ['My schedule', 'Event schedule', 'Talks', 'Suggested People'] as const;
@@ -39,6 +39,7 @@ export function liveTalks(conference: Conference, ranked: ApiTalk[]): RankedTalk
       title: talk.title,
       abstract: local?.abstract ?? talk.abstract,
       startsAt: talk.start_time,
+      endsAt: talk.end_time,
       track: local?.track ?? (talk.track?.join(', ') || 'Conference session'),
       room: talk.room || local?.room || 'Room to be announced',
       start: local?.start ?? venueMinutes(talk.start_time),
@@ -122,19 +123,10 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
     }
   }
 
-  let talks: RankedTalk[];
-  let schedule: RankedTalk[];
-  if (live) {
-    talks = liveTalks(conference, recommendations?.talks ?? []);
-    const planned = recommendations?.schedules[0]?.talks ?? [];
-    schedule = (planned.length ? liveTalks(conference, planned) : buildSchedule(talks))
-      .slice()
-      .sort((a, b) => a.start - b.start);
-  } else {
-    talks = recommendTalks(conference.talks, profile);
-    schedule = buildSchedule(talks);
-  }
-  const shownTalks = section === 'My schedule' ? schedule : talks;
+  // Best match first; MyPlan picks each day's plan from this order.
+  const talks: RankedTalk[] = live
+    ? liveTalks(conference, recommendations?.talks ?? [])
+    : recommendTalks(conference.talks, profile);
 
   const samplePeople = conference.sample
     ? demoPeople.slice(0, refreshed ? demoPeople.length : 2)
@@ -202,15 +194,15 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
               </View>
             ))}
           </>
+        ) : section === 'My schedule' ? (
+          <MyPlan conferenceName={conference.name} talks={talks} profile={profile} emptyText={emptyTalks} />
         ) : (
           <>
-            <Heading>{section === 'My schedule' ? 'Suggested schedule' : 'Recommended talks'}</Heading>
-            <Copy>{section === 'My schedule'
-              ? 'A plan without overlapping talks. All times are Mountain Time.'
-              : live ? 'Ranked by how well each talk matches your profile.' : 'Talks that fit your availability, with interest matches first.'}</Copy>
-            {!shownTalks.length ? <Copy>{emptyTalks}</Copy> : null}
-            <ScheduleColumns talks={section === 'My schedule' ? shownTalks : []}>
-              {shownTalks.map((talk) => {
+            <Heading>Recommended talks</Heading>
+            <Copy>{live ? 'Ranked by how well each talk matches your profile.' : 'Talks that fit your availability, with interest matches first.'}</Copy>
+            {!talks.length ? <Copy>{emptyTalks}</Copy> : null}
+            <View style={program.results}>
+              {talks.map((talk) => {
                 const match = live ? matchLabel(talk) : null;
                 return (
                   <View key={talk.id} style={program.slot}>
@@ -229,7 +221,7 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
                   </View>
                 );
               })}
-            </ScheduleColumns>
+            </View>
           </>
         )}
       </Flow>

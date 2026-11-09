@@ -61,7 +61,7 @@ async function request(url: string, options: RequestInit = {}, timeoutMs = 15000
   }
 }
 
-function venueMinutes(timestamp: string) {
+export function venueMinutes(timestamp: string) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return 0;
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -92,6 +92,7 @@ export function conferenceFromSchedule(data: JoinResponse): Conference {
     title: talk.title,
     abstract: talk.abstract,
     startsAt: talk.start_time,
+    endsAt: talk.end_time,
     track: talk.track?.join(', ') || 'Conference session',
     room: talk.room || 'Room to be announced',
     start: venueMinutes(talk.start_time),
