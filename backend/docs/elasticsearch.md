@@ -5,7 +5,7 @@ This document records Elasticsearch decisions needed for the backend. Candidate 
 ## Connection and configuration
 
 - Client/library and supported Elasticsearch version: **TBD**
-- Endpoint and credential configuration: use environment-based configuration; exact names are defined by repository setup.
+- Endpoint and credential configuration: `ES_URL` and `ES_API_KEY` from `.env` (pods: the `elasticsearch` Secret). See [elasticsearch-connection.md](elasticsearch-connection.md) for the shared cloud project, the `talks` index and tested queries.
 - Connection timeout, request timeout, retry policy, and startup health behavior: **TBD**
 - Index creation/upgrade ownership and idempotency strategy: **TBD**
 
