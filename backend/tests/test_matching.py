@@ -2,9 +2,11 @@
 
 from app.matching import (
     ATTENDEES_INDEX,
+    PHYSICAL_INDEX,
     SAFE_SOURCE,
     TALKS_INDEX,
     extract_resume_text,
+    mapping_mismatches,
     person_hit,
     profile_text,
     recommend_talks_query,
@@ -110,3 +112,60 @@ def test_person_hit_projects_safe_fields_and_why():
 
 def test_extract_resume_text_plain():
     assert extract_resume_text(b" hello\n", "text/plain") == "hello"
+
+
+def test_physical_index_names_are_versioned_per_alias():
+    assert PHYSICAL_INDEX == {
+        "attendees": "attendees-v1",
+        "talks": "talks-v1",
+        "connections": "connections-v1",
+    }
+
+
+def _live(props):
+    return {"dynamic": "strict", "properties": props}
+
+
+def test_mapping_mismatches_accepts_identical_and_tolerates_live_extras_in_semantic_fields():
+    live = {
+        "dynamic": "strict",
+        "properties": {
+            k: (v | {"model_settings": {"task_type": "text_embedding"}})
+            if v.get("type") == "semantic_text"
+            else v
+            for k, v in ATTENDEES_INDEX["mappings"]["properties"].items()
+        },
+    }
+    assert mapping_mismatches(ATTENDEES_INDEX["mappings"], live) == []
+
+
+def test_mapping_mismatches_reports_missing_type_inference_and_unexpected_fields():
+    expected = _live(
+        {
+            "name": {"type": "text"},
+            "profile": {"type": "semantic_text", "inference_id": "jina"},
+            "resume_text": {"type": "semantic_text", "inference_id": "jina"},
+            "blockout_times": {"properties": {"start_time": {"type": "date"}}},
+        }
+    )
+    live = _live(
+        {
+            "name": {"type": "keyword"},
+            "profile": {"type": "semantic_text", "inference_id": "elser"},
+            "headline": {"type": "text"},
+            "blockout_times": {"properties": {"start_time": {"type": "text"}}},
+        }
+    )
+    assert mapping_mismatches(expected, live) == [
+        "type:name=keyword!=text",
+        "inference_id:profile=elser",
+        "missing:resume_text",
+        "type:blockout_times.start_time=text!=date",
+        "unexpected:headline",
+    ]
+
+
+def test_mapping_mismatches_allows_extras_when_not_strict():
+    expected = {"dynamic": True, "properties": {"status": {"type": "keyword"}}}
+    live = {"dynamic": "true", "properties": {"status": {"type": "keyword"}, "x": {"type": "long"}}}
+    assert mapping_mismatches(expected, live) == []

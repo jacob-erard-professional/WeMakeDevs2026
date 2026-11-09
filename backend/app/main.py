@@ -36,8 +36,10 @@ from starlette.datastructures import UploadFile as FormUploadFile
 
 from app.matching import (
     ATTENDEES_INDEX,
+    PHYSICAL_INDEX,
     TALKS_INDEX,
     extract_resume_text,
+    mapping_mismatches,
     person_hit,
     profile_text,
     recommend_talks_query,
@@ -134,26 +136,68 @@ _indices_ready = False
 INDEX_RETRY_MAX_SECONDS = 60.0
 
 
+def _verify_alias(alias: str, body: dict[str, Any]) -> None:
+    """The alias exists: its target must carry the expected mapping, or setup fails loudly."""
+    live = es.indices.get_mapping(index=alias)
+    for physical, info in live.items():
+        problems = mapping_mismatches(body["mappings"], info.get("mappings", {}))
+        if problems:
+            raise RuntimeError(
+                f"index {physical} behind alias {alias} does not match the expected mapping: "
+                + ", ".join(problems)
+                + ". Create a new versioned index and move the alias."
+            )
+
+
+def _replace_legacy_index(name: str) -> None:
+    """A concrete index sits where the alias should be (pre-alias deployments).
+
+    Empty: delete it so the versioned index can take the name as an alias. Non-empty: never
+    delete data; the operator reindexes into the versioned index and moves the alias.
+    """
+    count = es.count(index=name)["count"]
+    if count:
+        raise RuntimeError(
+            f"legacy index {name} holds {count} docs; reindex it into {PHYSICAL_INDEX[name]} "
+            f"and alias {name} to it before starting"
+        )
+    es.indices.delete(index=name)
+    logger.warning("es_legacy_index_replaced index=%s docs=0", name)
+
+
+def _create_versioned(alias: str, body: dict[str, Any]) -> None:
+    """Create the physical index with its alias in one call so readers never see a half state."""
+    physical = PHYSICAL_INDEX[alias]
+    try:
+        es.indices.create(index=physical, aliases={alias: {}}, **body)
+        logger.info("es_index_created index=%s alias=%s", physical, alias)
+    except ApiError as exc:
+        if exc.error != "resource_already_exists_exception":  # lost a create race
+            raise
+    if not es.indices.exists_alias(name=alias, index=physical):
+        es.indices.put_alias(index=physical, name=alias)  # idempotent; heals a half state
+        logger.info("es_alias_added index=%s alias=%s", physical, alias)
+
+
 def ensure_indices() -> None:
-    """Create each index with its explicit body if it does not exist yet (idempotent).
+    """Make each alias point at a versioned index with the expected mapping (idempotent).
 
     Raises on any failure; `_indices_ready` flips to True only when every index is confirmed.
     """
     global _indices_ready
     if _indices_ready:
         return
-    for index, body in INDEX_BODIES.items():
+    for alias, body in INDEX_BODIES.items():
         with tracer.start_as_current_span("ensure_index") as span:
             span.set_attribute("db.system", "elasticsearch")
-            span.set_attribute("db.elasticsearch.index", index)
-            if es.indices.exists(index=index):
+            span.set_attribute("db.elasticsearch.index", alias)
+            if es.indices.exists_alias(name=alias):
+                _verify_alias(alias, body)
                 continue
-            try:
-                es.indices.create(index=index, **body)
-            except ApiError as exc:
-                if exc.error != "resource_already_exists_exception":  # lost a create race
-                    raise
-            logger.info("es_index_created index=%s", index)
+            if es.indices.exists(index=alias):
+                _replace_legacy_index(alias)
+            _create_versioned(alias, body)
+            _verify_alias(alias, body)
     _indices_ready = True
 
 

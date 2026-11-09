@@ -16,6 +16,10 @@ _DATE = {"type": "date"}
 _TEXT = {"type": "text"}
 _BOOL = {"type": "boolean"}
 
+# The app reads and writes the alias names; the physical indices are versioned so a mapping
+# change ships as a new index behind the same alias.
+PHYSICAL_INDEX = {"attendees": "attendees-v1", "talks": "talks-v1", "connections": "connections-v1"}
+
 # Only these fields of another attendee ever leave Elasticsearch through a search.
 SAFE_SOURCE: dict[str, list[str]] = {"includes": ["attendee_id", "name"]}
 TALK_SOURCE = [
@@ -80,6 +84,48 @@ TALKS_INDEX: dict[str, Any] = {
         },
     },
 }
+
+# --- Mapping verification -----------------------------------------------------------------------
+
+
+def mapping_mismatches(expected: dict[str, Any], live: dict[str, Any]) -> list[str]:
+    """Fields where a live index mapping differs from the expected one, as dotted paths.
+
+    Every expected property must exist with the same `type`, semantic_text fields with the same
+    `inference_id`, nested `properties` recursively. For a strict mapping, live fields that are
+    not expected are a mismatch too (the app would reject them anyway).
+    """
+    strict = expected.get("dynamic") == "strict"
+    return _property_mismatches(
+        expected.get("properties", {}), live.get("properties", {}), strict, ""
+    )
+
+
+def _property_mismatches(
+    expected: dict[str, Any], live: dict[str, Any], strict: bool, prefix: str
+) -> list[str]:
+    problems: list[str] = []
+    for name, spec in expected.items():
+        path = f"{prefix}{name}"
+        actual = live.get(name)
+        if actual is None:
+            problems.append(f"missing:{path}")
+            continue
+        if "type" in spec and actual.get("type") != spec["type"]:
+            problems.append(f"type:{path}={actual.get('type')}!={spec['type']}")
+            continue
+        if spec.get("type") == "semantic_text" and actual.get("inference_id") != spec.get(
+            "inference_id"
+        ):
+            problems.append(f"inference_id:{path}={actual.get('inference_id')}")
+        if "properties" in spec:
+            problems += _property_mismatches(
+                spec["properties"], actual.get("properties", {}), strict, f"{path}."
+            )
+    if strict:
+        problems += [f"unexpected:{prefix}{name}" for name in live if name not in expected]
+    return problems
+
 
 # --- Document shaping ---------------------------------------------------------------------------
 

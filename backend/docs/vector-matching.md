@@ -12,7 +12,7 @@ All text fields are embedded with one model, `.jina-embeddings-v5-text-small` (E
 | `talks` | backend | the confirmed live schedule, `_id` = `{conference_id}:{talk_id}` |
 | `talks-archive` | read-only | 24,691 past KubeCon + PyVideo talks (alias of `talks-jina`). Never written. |
 
-`attendees` and `talks` are created at startup (`ensure_indices`, retried in the background) with the strict mappings in `matching.py`; every write path calls `ensure_indices_ready()` and returns 503 until they exist, so a write can never create an index with dynamic mapping. No shard, replica or refresh settings (Serverless rejects them).
+`attendees`, `talks` and `connections` are **aliases** over versioned physical indices (`attendees-v1`, `talks-v1`, `connections-v1`, `PHYSICAL_INDEX` in `matching.py`); the app only ever uses the alias names. At startup `ensure_indices` (retried in the background) does, per alias: alias exists → verify the live mapping against the expected one (`mapping_mismatches`: every property with the same `type`, same `inference_id` on semantic_text, no extra fields on strict indices) and fail loudly on a mismatch; a concrete legacy index with that name → delete it only if it holds 0 docs (`es_legacy_index_replaced`), otherwise refuse to start until it is reindexed; otherwise create the versioned index with its alias in one call. Every write path calls `ensure_indices_ready()` and returns 503 until setup succeeded, so a write can never create an index with dynamic mapping. A mapping change ships as `-v2` plus an alias move, never an in-place edit. No shard, replica or refresh settings (Serverless rejects them).
 
 ### `attendees` (`ATTENDEES_INDEX`, `dynamic: strict`)
 
