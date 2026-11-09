@@ -1,16 +1,16 @@
-import type { PropsWithChildren } from 'react';
-import { useState } from 'react';
+import type { ComponentRef, PropsWithChildren } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { TextInputProps } from 'react-native';
 
 export const colors = {
-  ink: '#112C2A',
-  muted: '#455E59',
-  paper: '#F3F7F1',
+  ink: '#191924',
+  muted: '#565666',
+  paper: '#FAF9FD',
   white: '#FFFFFF',
-  green: '#195848',
-  pale: '#DCEFE4',
-  line: '#B0C4B8',
+  accent: '#5040AF',
+  pale: '#EEEBF9',
+  line: '#8B849E',
   error: '#922D24',
 };
 
@@ -22,12 +22,24 @@ export function Copy({ children }: PropsWithChildren) {
   return <Text style={styles.copy}>{children}</Text>;
 }
 
-export function Heading({ children }: PropsWithChildren) {
-  return <Text accessibilityRole="header" style={styles.heading}>{children}</Text>;
+export function Heading({ children, large }: PropsWithChildren<{ large?: boolean }>) {
+  const ref = useRef<ComponentRef<typeof Text>>(null);
+  const focusOnWeb = large && Platform.OS === 'web';
+  const focusProps = focusOnWeb ? { tabIndex: -1 } : {};
+  useEffect(() => {
+    if (focusOnWeb) ref.current?.focus();
+  }, [children, focusOnWeb]);
+
+  return (
+    <Text ref={ref} accessibilityRole="header" {...focusProps}
+      style={[styles.heading, large && styles.largeHeading]}>
+      {children}
+    </Text>
+  );
 }
 
-export function Card({ children }: PropsWithChildren) {
-  return <View style={styles.card}>{children}</View>;
+export function Section({ children }: PropsWithChildren) {
+  return <View style={styles.section}>{children}</View>;
 }
 
 export function Field({ label, multiline, ...props }: TextInputProps & { label: string }) {
@@ -68,7 +80,6 @@ export function Action({ title, onPress, secondary, selected, disabled }: {
       style={({ pressed }) => [
         styles.button,
         secondary && styles.secondary,
-        selected && styles.selected,
         focused && styles.focused,
         (pressed || disabled) && styles.dimmed,
       ]}
@@ -90,24 +101,24 @@ export function Message({ children, error }: PropsWithChildren<{ error?: boolean
 }
 
 export const styles = StyleSheet.create({
-  stack: { gap: 14 },
-  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
-  label: { color: colors.green, fontSize: 14, fontWeight: '700', letterSpacing: 0.7 },
+  stack: { gap: 18 },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 18, rowGap: 4 },
+  label: { color: colors.accent, fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
   copy: { color: colors.muted, fontSize: 16, lineHeight: 24 },
-  heading: { color: colors.ink, fontSize: 24, fontWeight: '700' },
-  card: { borderWidth: 1, borderColor: colors.line, borderRadius: 18, backgroundColor: colors.white, padding: 18, gap: 12 },
-  field: { gap: 6 },
+  heading: { color: colors.ink, fontSize: 23, fontWeight: '600', letterSpacing: -0.35 },
+  largeHeading: { fontSize: 40, fontWeight: '700', letterSpacing: -1.5 },
+  section: { width: '100%', maxWidth: 650, gap: 18 },
+  field: { gap: 7 },
   fieldLabel: { color: colors.ink, fontWeight: '600', fontSize: 16 },
-  input: { minHeight: 48, borderWidth: 1, borderColor: colors.line, borderRadius: 10, padding: 12, color: colors.ink, backgroundColor: colors.white, fontSize: 16 },
+  input: { minHeight: 48, borderBottomWidth: 1, borderColor: colors.line, padding: 12, color: colors.ink, backgroundColor: colors.pale, fontSize: 16, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
   multiline: { minHeight: 96, textAlignVertical: 'top' },
-  button: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.green, borderWidth: 1, borderColor: colors.green, alignSelf: 'flex-start', maxWidth: '100%' },
+  button: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 10, backgroundColor: colors.accent, borderRadius: 8, alignSelf: 'flex-start', maxWidth: '100%' },
   buttonText: { color: colors.white, fontWeight: '700', fontSize: 16 },
-  secondary: { backgroundColor: colors.white },
-  secondaryText: { color: colors.green },
-  selected: { backgroundColor: colors.pale },
+  secondary: { backgroundColor: 'transparent', paddingHorizontal: 0, borderRadius: 0 },
+  secondaryText: { color: colors.accent },
   selectedText: { textDecorationLine: 'underline' },
   focused: { outlineColor: colors.ink, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
   dimmed: { opacity: 0.72 },
-  message: { fontSize: 16, lineHeight: 22, color: colors.green },
+  message: { fontSize: 16, lineHeight: 22, color: colors.ink },
   error: { color: colors.error },
 });

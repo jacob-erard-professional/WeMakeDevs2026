@@ -4,7 +4,9 @@
 
 The mock uses one conference day in Mountain Time. Talk recommendations prioritize interest matches and exclude unavailable times. The schedule greedily selects recommendations without overlaps. Switching conferences clears the active profile and connection requests. The résumé picker retains the filename in memory only. The sample conference simulates new arrivals on refresh, and newly published conferences start with an empty people list.
 
-Schedule import currently supports pasted text. Join codes resolve within the running app. Shared join links, URL/file schedule import, live recommendations, connection acceptance, and persistence depend on the FastAPI integration.
+The profile flow keeps one draft while moving between About you and Availability. `src/Flow.tsx` provides short content transitions and disables them when the device or browser requests reduced motion.
+
+Schedule import currently supports pasted text. The organizer QR encodes the same plain conference code shown on the entry pass. Native camera scanning and manual entry use the same in-memory conference lookup. The scanner accepts QR data as text and never opens a scanned URL. Shared join codes across devices, join links, URL/file schedule import, live recommendations, connection acceptance, and persistence depend on the FastAPI integration.
 
 ## Extend by feature
 
