@@ -23,7 +23,15 @@ out="$(mktemp)"; trap 'rm -f "$out"' EXIT
 # Prints only the HTTP status; the body lands in $out for the summaries below.
 es() { curl -s -m 30 -o "$out" -w '%{http_code}' -H "Authorization: ApiKey $ES_API_KEY" \
          -H 'Content-Type: application/json' -H 'kbn-xsrf: true' "$@" || echo 000; }
-py() { python3 -I -c "$1" "$out"; }
+py() { python3 -I -c "$1" "$out" || python3 -I -c 'import json,sys
+try:
+    e=json.load(open(sys.argv[1])).get("error",{})
+    if isinstance(e,dict) and "type" in e and "reason" in e:
+        print("  error",e["type"],e["reason"])
+    else:
+        print("  unparseable response")
+except Exception:
+    print("  unparseable response")' "$out" || true; }
 
 echo "Elasticsearch: ${ES_URL#https://}"
 echo "Kibana:        ${KB_URL#https://}"
