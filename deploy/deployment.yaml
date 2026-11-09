@@ -1,3 +1,5 @@
+# Frontend: the Expo web export served by nginx, which also proxies /api/* to Service backend.
+# The platform routes https://wearedevs.cnh.radarhq.io to Service app, so this is the public face.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,43 +18,47 @@ spec:
         app: app
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
-        - name: app
+        - name: web
           image: app
           ports:
             - name: http
               containerPort: 8080
-          env:
-            - name: OTEL_SERVICE_NAME
-              value: conference-api
-          # ES_URL, ES_API_KEY, OPENAI_API_KEY, ORGANIZER_API_KEY and OTEL_EXPORTER_OTLP_* come
-          # from Secret app-env, created outside git by scripts/push-secrets.sh.
-          envFrom:
-            - secretRef:
-                name: app-env
-                optional: true
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 10m
+              memory: 32Mi
             limits:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 100m
+              memory: 128Mi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /healthz
               port: http
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /health
+              path: /healthz
               port: http
-            initialDelaySeconds: 10
+            initialDelaySeconds: 5
             periodSeconds: 10
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
-            seccompProfile:
-              type: RuntimeDefault
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            # Pid file, temp dirs and the rendered server config all live under /tmp.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

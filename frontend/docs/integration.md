@@ -21,4 +21,8 @@ Use this table to discuss UI needs. The paths come from the initial frontend bri
 - **Inputs and errors.** Confirm supported import and resume formats, size limits, multipart fields, LinkedIn validation, unavailable time ranges, validation error shapes, and which writes support idempotency.
 - **Recommendations.** Confirm talk and person IDs, safe explanation fields, empty results, refresh semantics, and schedule overlap and timezone rules.
 - **Privacy and connections.** Confirm discovery opt-in, the precise meaning and audience of public resume visibility, connection request and acceptance states, and who can read each field at each stage. A profile ID by itself grants no access.
+## Same-origin `/api` on the hosted web build
+
+On the cluster the web build is served by nginx (`frontend/Dockerfile`, `frontend/nginx.conf`) behind the public URL, and the same nginx proxies `/api/*` to the backend Service with the prefix stripped: `/api/health` reaches FastAPI's `/health`. The HTTP adapter should build URLs from `API_BASE_URL` in `src/apiBase.ts` (default `/api`, overridable at build time with `EXPO_PUBLIC_API_URL`), so web needs no CORS and native builds point the same code at an absolute URL.
+
 - **Transport.** Confirm the development API URL, web CORS, native reachability, authentication transport, and telemetry propagation. Map response shapes at the data boundary and use timeouts and actionable errors.

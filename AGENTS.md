@@ -122,11 +122,12 @@ Radar is an open-source Kubernetes UI. Its AI SRE finds root causes from the UI 
 
 **How we ship (GitOps)**
 1. Change code or `deploy/` in a PR; Gitar reviews; merge to `main`. Nobody, human or bot, pushes to `main`.
-2. `.github/workflows/deploy.yaml` (`build-and-deploy`) builds `backend/` into `ghcr.io/jacob-erard-professional/wemakedevs2026:<sha7>` and force-pushes main's `deploy/` with that tag pinned to the **`deploy` branch**. Never edit the `deploy` branch by hand.
+2. `.github/workflows/deploy.yaml` (`build-and-deploy`) builds `backend/` into `ghcr.io/jacob-erard-professional/wemakedevs2026:<sha7>` and `frontend/` (Expo web export behind nginx) into `ghcr.io/jacob-erard-professional/wemakedevs2026-web:<sha7>`, then force-pushes main's `deploy/` with both tags pinned to the **`deploy` branch**. Never edit the `deploy` branch by hand.
 3. Argo CD Application `app` in **`team-wearedevs`** (not `argocd`) syncs `deploy/` from the `deploy` branch. Apply `argocd/application.yaml` once with `apply_resource`.
 4. After a merge: check the workflow went green, sync/inspect the Application via `manage_gitops`, `wait_for` the rollout, and confirm the live pods run the new tag. Don't apply or patch Argo CD-owned manifests on the cluster; self-heal reverts them.
 5. Secrets: Secret `app-env` holds ES, OpenAI, organizer and OTLP values. A human creates it with `KUBECONFIG=~/cnh-kubeconfig ./scripts/push-secrets.sh`; never put a value in git, a chat or logs. Restart the app with `manage_workload` after changing it.
 6. Every manifest needs requests/limits and probes (Gitar's `k8s-manifest-review` rule). The Service must stay `app`, port 80: the platform routes the public URL to it.
+7. Two workloads: Deployment/Service **`app`** is the frontend (nginx serving the web build, probe `/healthz`), and it proxies **`/api/*`** to Deployment/Service **`backend`** (FastAPI, probe `/health`) with the `/api` prefix stripped. So https://wearedevs.cnh.radarhq.io/api/health is the backend's `/health`. Secret `app-env` is only mounted on `backend`.
 
 **How to use it while building**
 - Prefer Radar's MCP tools over kubectl: `issues`, `diagnose`, `get_changes`, `get_resource`, `list_resources`, `search`, `get_workload_logs`, `get_events`.
