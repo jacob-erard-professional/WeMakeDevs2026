@@ -7,6 +7,8 @@ import type { ScrollView } from 'react-native';
 
 import { colors, styles } from '../ui';
 import { heroPhotos } from './photos';
+
+const creditedPhotos = heroPhotos.filter((photo) => photo.photographer && photo.pageUrl);
 import { paths } from './router';
 import type { Page } from './router';
 
@@ -105,12 +107,12 @@ function Footer({ onNavigate }: { onNavigate: (page: Page) => void }) {
         </View>
         <Text style={shell.credits}>
           Photos on Unsplash by{' '}
-          {heroPhotos.map((photo, index) => (
+          {creditedPhotos.map((photo, index) => (
             <Text key={photo.id}>
-              <Text accessibilityRole="link" style={shell.creditLink} onPress={() => Linking.openURL(photo.pageUrl)}>
+              <Text accessibilityRole="link" style={shell.creditLink} onPress={() => Linking.openURL(photo.pageUrl!)}>
                 {photo.photographer}
               </Text>
-              {index < heroPhotos.length - 2 ? ', ' : index === heroPhotos.length - 2 ? ' and ' : ''}
+              {index < creditedPhotos.length - 2 ? ', ' : index === creditedPhotos.length - 2 ? ' and ' : ''}
             </Text>
           ))}
           . Demo session: nothing here is stored.

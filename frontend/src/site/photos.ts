@@ -6,8 +6,9 @@ export type Photo = {
   id: string;
   src: string;
   alt: string;
-  photographer: string;
-  pageUrl: string;
+  // Unsplash photos are credited in the footer; our own team photo has no credit line.
+  photographer?: string;
+  pageUrl?: string;
   fallback: string;
 };
 
@@ -17,11 +18,9 @@ function unsplash(id: string, width = 1800): string {
 
 export const heroPhotos: Photo[] = [
   {
-    id: 'coding-table',
-    src: unsplash('1581091212911-f4efc3f71c48'),
-    alt: 'A group of people sitting at a long table, coding on laptops at a hackathon',
-    photographer: 'ThisisEngineering',
-    pageUrl: 'https://unsplash.com/photos/FXgbqr-t7uw',
+    id: 'team',
+    src: '/hackathon-team.jpg',
+    alt: 'Our team hacking on laptops around a coffee table in Salt Lake City',
     fallback: '#1E1B3A',
   },
   {
