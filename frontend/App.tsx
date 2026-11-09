@@ -340,7 +340,7 @@ export default function App() {
 }
 
 const layout = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.paper },
+  screen: { flex: 1, backgroundColor: colors.desktop },
   content: { maxWidth: 920, paddingVertical: 48, gap: 34 },
   scheduleContent: { maxWidth: 1100 },
   entry: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', columnGap: 64, rowGap: 32 },
