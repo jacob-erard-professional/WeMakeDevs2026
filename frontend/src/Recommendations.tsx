@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { buildSchedule, formatTime, matchingTopics, recommendTalks } from './conference';
 import type { Attendee, Conference } from './conference';
 import { demoConference, demoPeople } from './demoConference';
-import { Action, Card, Copy, Heading, Label, Message, styles } from './ui';
+import { Action, colors, Copy, Heading, Label, Message, Section, styles } from './ui';
 
 const sections = ['My schedule', 'Talks', 'People'] as const;
 type Section = typeof sections[number];
@@ -41,7 +41,7 @@ export function Recommendations({ conference, profile, requested, onRequest, onE
           {refreshed ? <Message>{people.length ? 'People suggestions updated.' : 'No people are available yet.'}</Message> : null}
           {!people.length ? <Copy>People will appear here when this conference has discoverable attendees.</Copy> : null}
           {people.map((person) => (
-            <Card key={person.id}>
+            <Section key={person.id}>
               <Label>{person.role}</Label>
               <Heading>{person.name}</Heading>
               <Copy>{person.shared.length ? `Shared interests: ${person.shared.join(', ')}.` : `Meet another attendee interested in ${person.topics.join(' and ')}.`}</Copy>
@@ -49,7 +49,7 @@ export function Recommendations({ conference, profile, requested, onRequest, onE
               {requested.includes(person.id) ? <Message>Connection request pending</Message> : (
                 <Action title={`Request connection with ${person.name}`} onPress={() => onRequest(person.id)} />
               )}
-            </Card>
+            </Section>
           ))}
         </>
       ) : (
@@ -58,14 +58,25 @@ export function Recommendations({ conference, profile, requested, onRequest, onE
           <Copy>{section === 'My schedule' ? 'A plan without overlapping talks. All times are Mountain Time.' : 'Talks that fit your availability, with interest matches first.'}</Copy>
           {!shownTalks.length ? <Copy>No talks fit your availability. Edit your profile to update your unavailable times.</Copy> : null}
           {shownTalks.map((talk) => (
-            <Card key={talk.id}>
-              <Label>{formatTime(talk.start)} to {formatTime(talk.end)} · {talk.room}</Label>
-              <Heading>{talk.title}</Heading>
-              <Copy>{talk.matched ? `Matches your interest in ${talk.track}.` : `Explore ${talk.track} during a time you’re available.`}</Copy>
-            </Card>
+            <View key={talk.id} style={program.slot}>
+              <View style={program.time}>
+                <Label>{formatTime(talk.start)} to {formatTime(talk.end)}</Label>
+                <Copy>{talk.room}</Copy>
+              </View>
+              <View style={program.talk}>
+                <Heading>{talk.title}</Heading>
+                <Copy>{talk.matched ? `Matches your interest in ${talk.track}.` : `Explore ${talk.track} during a time you’re available.`}</Copy>
+              </View>
+            </View>
           ))}
         </>
       )}
     </View>
   );
 }
+
+const program = StyleSheet.create({
+  slot: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 20, rowGap: 8, borderTopWidth: 1, borderColor: colors.line, paddingVertical: 14 },
+  time: { flexBasis: 165 },
+  talk: { flexBasis: 225, flexGrow: 1, flexShrink: 1, gap: 4 },
+});
