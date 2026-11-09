@@ -99,8 +99,13 @@ def split_summary(summary: str) -> tuple[str, list[str]]:
     speakers = []
     for chunk in re.split(r"\s*&\s*|\s*;\s*", tail):
         name = chunk.split(",", 1)[0].strip()
-        if name:
-            speakers.append(name)
+        if not name:
+            continue
+        # Co-located event rows look like `Title - Half Day Event | ALL ACCESS PASS REQUIRED`;
+        # that tail is a notice, not a person. Keep the whole summary as the title instead.
+        if "|" in name or len(name.split()) > 5 or (name.isupper() and len(name) > 4):
+            return summary.strip(), []
+        speakers.append(name)
     return title.strip(), speakers
 
 

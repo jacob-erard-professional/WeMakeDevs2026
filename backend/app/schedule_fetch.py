@@ -9,7 +9,8 @@ Rules, from `docs/schedule-formats.md`:
   then made to that vetted address (pinned) while TLS SNI and `Host` keep the hostname, so a DNS
   rebinding between check and connect cannot swap the target.
 - Redirects are never followed automatically. Up to 3 hops are followed by hand, each re-checked.
-- 5 s connect, 20 s total, body streamed and aborted past 10 MiB.
+- 5 s connect, 45 s total (Sched takes 15-25 s to generate a 500-event export), body streamed
+  and aborted past 10 MiB.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import httpcore
 MAX_FETCH_BYTES = 10 * 1024 * 1024
 MAX_REDIRECTS = 3
 CONNECT_TIMEOUT = 5.0
-TOTAL_TIMEOUT = 20.0
+TOTAL_TIMEOUT = 45.0
 USER_AGENT = "WeMakeDevs2026-schedule-import/1.0"
 
 

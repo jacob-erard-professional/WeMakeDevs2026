@@ -252,3 +252,12 @@ def test_public_dns_answer_is_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))],
     )
     assert resolve_public_address("example.com") == "93.184.216.34"
+
+
+def test_split_summary_does_not_turn_colocated_notices_into_speakers() -> None:
+    assert split_summary(
+        "CiliumCon Hosted by CNCF - Half Day Event | ALL ACCESS PASS REQUIRED"
+    ) == (
+        "CiliumCon Hosted by CNCF - Half Day Event | ALL ACCESS PASS REQUIRED",
+        [],
+    )
