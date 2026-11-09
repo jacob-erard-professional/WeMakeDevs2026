@@ -1,6 +1,6 @@
 # Elasticsearch Data and Query Template
 
-This document records Elasticsearch decisions needed for the backend. Candidate names and examples are prompts only. Mark unresolved choices **TBD** and update this document when implementation decisions are made. Elasticsearch is the single store for conference data such as talks and attendees; do not introduce another database for the same records.
+Elasticsearch is the single store for conference data such as schedules and attendees; do not introduce another database for the same records. Organizer implementation decisions are summarized below; the remaining attendee/search design prompts are retained for future work.
 
 ## Connection and configuration
 
@@ -13,13 +13,14 @@ This document records Elasticsearch decisions needed for the backend. Candidate 
 
 | Candidate index | Purpose | Conference scope | Status |
 |---|---|---|---|
-| `talks` | Confirmed sessions and searchable schedule content | Required; exact representation **TBD** | Candidate |
-| `attendees` | Attendee name, bio, availability, and discovery settings | Required; document identity and privacy model **TBD** | Candidate |
-| `connections` | Connection requests and accepted state, if modeled separately | Required; representation versus attendee embedding **TBD** | Candidate |
-| `schedule_drafts` | Parsed but unconfirmed schedule data, if persistence is needed | Required if persisted; retention/access rules **TBD** | Candidate |
+| `talks` | Confirmed sessions and searchable schedule content | Conference and schedule IDs on each document | Implemented |
+| `attendees` | Attendee name, bio, availability, and discovery settings | Conference-scoped | Existing backend |
+| `connections` | Connection requests and accepted state | Conference-scoped | Existing backend |
+| `schedule_drafts` | Parsed, unconfirmed schedule for organizer review | Conference-scoped; 24-hour confirmation window | Implemented |
+| `conferences` | Active schedule pointer used by attendee recommendations | One document per conference | Implemented |
 | `speakers` / `events` | Separate entities if needed by the finalized schedule model | **TBD** | Candidate |
 
-Index names, aliases, shard/replica settings, lifecycle policies, and whether some candidate indices should be combined are **TBD**.
+Organizer indices are created idempotently at startup with explicit mappings. Expired draft documents are not automatically deleted; a retention policy can be added with deployment lifecycle management.
 
 ## Document templates
 
@@ -119,6 +120,10 @@ For each query, document the index/alias, required conference filter, request sh
 - Add spans and useful metrics around Elasticsearch operations; avoid sensitive user content in span attributes.
 - Define behavior for Elasticsearch unavailable, mapping conflict, timeout, partial results, and index migration: **TBD**.
 - Define deletion and retention behavior for attendee data and unconfirmed schedule drafts: **TBD**.
+
+## Organizer schedule publication
+
+Draft IDs are UUIDs and Elasticsearch document IDs use `{conference_id}:{draft_id}`. Drafts contain extracted JSON and expiry metadata, not raw uploads or their source URLs. Confirmed talks use `{conference_id}:{schedule_id}:{talk_id}` and UTC timestamps. Confirmation writes all talk documents successfully before setting `conferences.active_schedule_id`; attendee recommendations filter on that pointer. Reconfirming a draft uses stable schedule/talk identifiers so retries replace the same documents.
 
 ## Current vectorization extension template
 

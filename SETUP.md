@@ -67,11 +67,10 @@ until Nov 29, then it drops to the free Basic license).
   model in the Radar UI under **Settings → AI investigations**.
 
 ### 4. OpenAI
-- Claim the $50 credits at the event, create an API key and put it in `.env` as `OPENAI_API_KEY`.
+- Claim the $50 credits at the event and set `OPENAI_API_KEY` in `.env`. Schedule extraction uses the Responses API and `OPENAI_MODEL` (defaults to `gpt-4o-mini`).
 
 ### 5. Before Nov 9
 - `cp .env.example .env` and fill it in.
 - Run `./scripts/dev-up.sh` once on the venue Wi-Fi day (or the night before) so the
   Docker images are already cached.
-- Read the hackathon rules on whether code written before the event is allowed. This
-  repo only has tooling and config, no product code.
+- Read the hackathon rules on whether code written before the event is allowed.

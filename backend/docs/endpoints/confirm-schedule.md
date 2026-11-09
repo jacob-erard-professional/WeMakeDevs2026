@@ -1,39 +1,17 @@
-# Endpoint Contract Template: `/confirm-schedule`
+# `POST /confirm-schedule`
 
-**Status:** Draft; route and schema are subject to merge. **TBD** means the decision is intentionally open.
-
-## Purpose and actor
-
-Allow an authorized organizer to confirm the reviewed, parsed schedule. Persist confirmed sessions so attendees can receive recommendations. Return the attendee join link and QR code described by the product flow; exact payload and generation mechanism are **TBD**.
+Authorized organizers confirm the reviewed schedule and receive attendee join materials.
 
 ## Request
 
-- HTTP method and content type: **TBD**
-- Conference scope and organizer authorization: **TBD**
-- Draft identifier or reviewed schedule payload: **TBD**
-- Organizer edits and required fields: **TBD**
-- Confirmation/replacement semantics for an existing schedule: **TBD**
+JSON with `conference_id` and either `draft_id` from `/upload-schedule` or a reviewed `talks` array. Each talk requires title and timezone-aware `start_time` / `end_time`; optional fields are `talk_id`, `abstract`, `tags`, `speaker_names`, and `room`. Drafts expire after 24 hours. Authentication uses `X-Organizer-Key` matching `ORGANIZER_API_KEY`.
 
 ## Response
 
-- Status code and schema: **TBD**
-- Confirmation identifier/state: **TBD**
-- Join link and QR representation (URL, image, or encoded value): **TBD**
-- Partial success behavior if schedule storage succeeds but QR generation fails: **TBD**
+Returns `conference_id`, `schedule_id`, `talk_count`, `join_url`, and a PNG `qr_code_data_url`. The public URL is based on `PUBLIC_BASE_URL`.
 
-## Validation and errors
+## Publication behavior
 
-- Validate conference and organizer authorization, schedule structure, times, and required session data: exact rules **TBD**.
-- Invalid or expired draft, duplicate sessions, conflicting times, Elasticsearch unavailable, and QR generation failure behavior: **TBD**.
-- Idempotency and retry semantics: **TBD**.
+Talks are indexed in Elasticsearch with conference and schedule identifiers, timestamps normalized to UTC, and `confirmed=true`. After the complete bulk write succeeds, the conference's `active_schedule_id` pointer is updated. Attendee recommendations query only that active schedule, so replacement does not expose a partial schedule. Old schedule records remain available but inactive. Reconfirming the same draft returns its stored confirmation.
 
-## Side effects and Elasticsearch
-
-- Write the confirmed schedule to the agreed conference-scoped talk model in [`../elasticsearch.md`](../elasticsearch.md).
-- Ensure attendee talk search and recommendations read only confirmed schedule records.
-- Define duplicate detection, replacement/merge behavior, and atomic publication so attendees do not see a partial schedule (**TBD**).
-- Store schedule times as instants in UTC; display timezone policy is **TBD**.
-
-## Observability
-
-Trace validation, Elasticsearch writes, and join/QR generation. Record duration and safe document/result counts; do not log uploaded source documents or credentials embedded in schedule URLs.
+Invalid/expired drafts return `404`/`410`; invalid talk times return `422`; Elasticsearch failures return `503`. Traces cover schedule writes and pointer publication.

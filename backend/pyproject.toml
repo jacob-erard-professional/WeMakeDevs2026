@@ -6,6 +6,8 @@ dependencies = [
   "fastapi>=0.115,<1", "uvicorn[standard]>=0.32,<1", "elasticsearch>=8.15,<10",
   "python-multipart>=0.0.18", "qrcode[pil]>=8,<9", "pydantic-settings>=2.6,<3",
   "opentelemetry-api>=1.28,<2", "opentelemetry-sdk>=1.28,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.28,<2", "openai>=1.90,<3",
+  "httpx>=0.27,<1", "beautifulsoup4>=4.12,<5",
 ]
 
 [tool.ruff]
