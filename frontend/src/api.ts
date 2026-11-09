@@ -61,7 +61,7 @@ async function request(url: string, options: RequestInit = {}, timeoutMs = 15000
   }
 }
 
-function venueMinutes(timestamp: string) {
+export function venueMinutes(timestamp: string) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return 0;
   const parts = new Intl.DateTimeFormat('en-US', {
