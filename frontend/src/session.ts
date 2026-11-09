@@ -21,11 +21,18 @@ export type AttendeeSession = {
   // The profile last accepted by the server (or the demo), and any unsaved edits.
   saved?: StoredProfile;
   draft?: StoredProfile;
+  // The server's recommendation payload from the last save, kept opaque so the shape can
+  // change on the backend without invalidating stored sessions.
+  recommendations?: Record<string, unknown>;
 };
 
 export type StoredOrganizerSession = OrganizerSession & {
   draft?: { talks: ParsedTalk[]; warnings: string[] };
   published?: boolean;
+  // Event details shown on the entry pass; they live only in this organizer's browser.
+  date?: string;
+  venue?: string;
+  description?: string;
 };
 
 function storage(): Storage | null {
@@ -85,12 +92,14 @@ function isAttendeeSession(value: unknown): value is AttendeeSession {
   return isRecord(value)
     && (value.attendeeToken === undefined || isString(value.attendeeToken))
     && (value.saved === undefined || isStoredProfile(value.saved))
-    && (value.draft === undefined || isStoredProfile(value.draft));
+    && (value.draft === undefined || isStoredProfile(value.draft))
+    && (value.recommendations === undefined || (isRecord(value.recommendations) && !Array.isArray(value.recommendations)));
 }
 
 function isOrganizerSession(value: unknown): value is StoredOrganizerSession {
   return isRecord(value) && isString(value.conferenceId) && isString(value.organizerToken) && isString(value.name)
     && (value.published === undefined || typeof value.published === 'boolean')
+    && ['date', 'venue', 'description'].every((field) => value[field] === undefined || isString(value[field]))
     && (value.draft === undefined || (isRecord(value.draft) && Array.isArray(value.draft.talks) && Array.isArray(value.draft.warnings)));
 }
 

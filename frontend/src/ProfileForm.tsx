@@ -4,6 +4,7 @@ import { View } from 'react-native';
 
 import { formatTime, parseTime } from './conference';
 import type { Attendee } from './conference';
+import { sampleAttendee } from './demoConference';
 import { Flow } from './Flow';
 import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
@@ -18,10 +19,11 @@ export type ProfileStep = 'about' | 'availability';
 // `onServer` is true when that visit saved, meaning the server already holds its text.
 export type PreviousResume = { name: string; onServer: boolean };
 
-export function ProfileForm({ initial, previousResume, step, onChange, onSave, onStepChange }: {
+export function ProfileForm({ initial, previousResume, step, sample, onChange, onSave, onStepChange }: {
   initial?: Attendee;
   previousResume?: PreviousResume;
   step: ProfileStep;
+  sample?: boolean;
   onChange: (profile: Attendee) => void;
   onSave: (profile: Attendee) => Promise<void>;
   onStepChange: (step: ProfileStep) => void;
@@ -116,6 +118,9 @@ export function ProfileForm({ initial, previousResume, step, onChange, onSave, o
       {step === 'about' ? <Section>
         <Label>Step 1 of 2 · About you</Label>
         <Heading large>Tell us about yourself</Heading>
+        {sample ? (
+          <Action title="Use sample profile" onPress={() => { setProfile(sampleAttendee); onChange(sampleAttendee); setError(''); }} secondary />
+        ) : null}
         <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
         <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
         <Field label="Email (optional, shared only with connections you accept)" value={profile.email} onChangeText={(email) => update({ email })} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" maxLength={320} />

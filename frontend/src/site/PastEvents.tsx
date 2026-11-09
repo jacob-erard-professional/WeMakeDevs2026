@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Copy, Heading, Label, Message, colors } from '../ui';
+import { Copy, Heading, Message, TalkDetails, colors } from '../ui';
 import type { PastEvent, PastTalk } from './sampleEvents';
 import { loadPastEvents, sampleDataNotice } from './sampleEvents';
 import { Container } from './SiteShell';
@@ -21,7 +21,7 @@ export function TalkCard({ talk, event }: { talk: PastTalk; event?: string }) {
       </View>
       <Text accessibilityRole="header" style={page.talkTitle}>{talk.title}</Text>
       <Text style={page.speakers}>{talk.speakers.join(', ')}</Text>
-      <Copy>{talk.abstract}</Copy>
+      <TalkDetails title={talk.title} abstract={talk.abstract} extra={talk.details} />
     </View>
   );
 }
@@ -39,8 +39,7 @@ export function PastEvents() {
 
   return (
     <Container style={page.block}>
-      <Label>Past events</Label>
-      <Heading large>Events that ran on Conference Connections.</Heading>
+      <Heading large>Event archive</Heading>
       <SampleBadge />
       {failed ? <Message error>Couldn't load past events. Try again in a moment.</Message> : null}
       {!events && !failed ? <Message>Loading events…</Message> : null}

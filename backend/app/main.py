@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import qrcode
 from elasticsearch import ApiError, Elasticsearch, NotFoundError
@@ -44,7 +45,8 @@ from app.resume_parser import (
     merge_resume_profile,
     parse_resume,
 )
-from app.schedule_parser import parse_schedule
+from app.schedule_fetch import FetchError, UnsafeUrlError
+from app.schedule_parser import ALLOWED_UPLOAD_TYPES, ScheduleParseError, parse_schedule
 from app.schedule_recommendations import best_schedules
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -1035,23 +1037,33 @@ async def accept_connection(
 @app.post("/upload-schedule")
 async def upload_schedule(
     conference_id: str,
-    source_url: HttpUrl | None = None,
+    source_url: str | None = None,
+    timezone: str | None = None,
     file: UploadFile | None = File(default=None),
     x_organizer_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
     await verify_organizer(conference_id, x_organizer_token)
     if bool(source_url) == bool(file):
         raise HTTPException(422, "Provide exactly one of source_url or file")
+    if timezone:
+        try:
+            ZoneInfo(timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(422, "timezone must be an IANA zone name") from None
+    else:
+        # The conferences mapping is strict and has no timezone field yet; if one is added later
+        # (as an IANA name) it becomes the default without touching this handler.
+        conference = await es_call(
+            "read_conference_timezone",
+            lambda: es.get(index="conferences", id=conference_id)["_source"],
+        )
+        timezone = conference.get("timezone") or None
     content: bytes | None = None
     if file:
-        if file.content_type not in {
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "image/png",
-            "image/jpeg",
-            "image/webp",
-        }:
-            raise HTTPException(415, "Supported uploads: PDF, DOCX, PNG, JPEG, WEBP")
+        if (file.content_type or "").split(";")[0].strip() not in ALLOWED_UPLOAD_TYPES:
+            raise HTTPException(
+                415, "Supported uploads: ICS, JSON, XML, HTML, PDF, DOCX, PNG, JPEG, WEBP"
+            )
         content = await file.read(MAX_UPLOAD_BYTES + 1)
         if len(content) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Upload exceeds 10 MiB")
@@ -1062,11 +1074,15 @@ async def upload_schedule(
             parsed = await run_in_threadpool(
                 parse_schedule,
                 conference_id=conference_id,
-                source_url=str(source_url) if source_url else None,
+                source_url=source_url,
                 content=content,
                 content_type=file.content_type if file else None,
                 filename=file.filename if file else None,
+                timezone=timezone,
             )
+        except (UnsafeUrlError, FetchError, ScheduleParseError) as exc:
+            span.set_attribute("schedule.rejected", type(exc).__name__)
+            raise HTTPException(422, str(exc)) from None
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
@@ -1074,7 +1090,9 @@ async def upload_schedule(
                 "schedule_parse_failed conference_id=%s error=%s", conference_id, type(exc).__name__
             )
             raise HTTPException(502, "Schedule parser could not produce a draft") from None
+        span.set_attribute("schedule.source_format", parsed.get("source_format") or "unknown")
         span.set_attribute("schedule.talk_count", len(parsed["talks"]))
+        span.set_attribute("schedule.warning_count", len(parsed["warnings"]))
     return {"conference_id": conference_id, **parsed}
 
 

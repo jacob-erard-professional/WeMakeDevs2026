@@ -1,0 +1,101 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//pretalx//pretalx.com//pyconde-pydata-2025
+BEGIN:VTIMEZONE
+TZID:Europe/Berlin
+BEGIN:DAYLIGHT
+DTSTART:20240423T000000
+TZNAME:CEST
+TZOFFSETFROM:+0200
+TZOFFSETTO:+0200
+END:DAYLIGHT
+BEGIN:STANDARD
+DTSTART:20241027T030000
+RDATE:20251026T030000
+TZNAME:CET
+TZOFFSETFROM:+0200
+TZOFFSETTO:+0100
+END:STANDARD
+BEGIN:DAYLIGHT
+DTSTART:20250330T030000
+RDATE:20260329T030000
+TZNAME:CEST
+TZOFFSETFROM:+0100
+TZOFFSETTO:+0200
+END:DAYLIGHT
+END:VTIMEZONE
+BEGIN:VEVENT
+SUMMARY:Reasonable AI - Kristian Kersting
+DTSTART;TZID=Europe/Berlin:20250423T103000
+DTEND;TZID=Europe/Berlin:20250423T111500
+DTSTAMP:20261109T222342Z
+UID:pretalx-pyconde-pydata-2025-3MNGN8@pretalx.com
+DESCRIPTION:The relationship between humans and machines\, especially in t
+ he context of Artificial Intelligence (AI)\, is shaped by hopes\, concerns
+ \, and moral questions. On the one hand\, advances in AI offer great promi
+ se: it can help us solve complex problems\, improve healthcare\, streamlin
+ e workflows\, and much more. Yet\, at the same time\, there are legitimate
+  concerns about the control over this technology\, its potential impact on
+  jobs and society\, and ethical issues related to discrimination and the l
+ oss of human autonomy. In the talk I shall will explore and illustrate the
+  complex tension between innovation and moral responsibility in AI researc
+ h.
+LOCATION:Zeiss Plenary (Spectrum)
+URL:https://pretalx.com/pyconde-pydata-2025/talk/3MNGN8/
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Are LLMs the answer to all our problems? - Dr. Maria Börner
+DTSTART;TZID=Europe/Berlin:20250423T114500
+DTEND;TZID=Europe/Berlin:20250423T121500
+DTSTAMP:20261109T222342Z
+UID:pretalx-pyconde-pydata-2025-EN3QPQ@pretalx.com
+DESCRIPTION:Generative AI models have shaken up the German market. Since t
+ he release of ChatGPT\, AI is available and usable for everyone. The numbe
+ r of ChatGPT-based agents is growing rapidly\, but concerns about privacy
+ \, copyright and ethics remain. Regulation and ethical AI go hand in hand
+ \, but are often seen as barriers. The presentation will cover the differe
+ nt aspects of ethics and how they are addressed by regulation. It will giv
+ e an overview of how to use large language models in a safe and practical 
+ way. This won't only address the various ethical issues\, but also convinc
+ e your next customer to invest in your AI-based product.
+LOCATION:Hassium
+URL:https://pretalx.com/pyconde-pydata-2025/talk/EN3QPQ/
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Why E.ON Loves Python - Christer Friberg
+DTSTART;TZID=Europe/Berlin:20250423T114500
+DTEND;TZID=Europe/Berlin:20250423T121500
+DTSTAMP:20261109T222342Z
+UID:pretalx-pyconde-pydata-2025-JM3G8S@pretalx.com
+DESCRIPTION:Join me as I share my 20-year journey with Python and its pivo
+ tal role at E.ON. Discover how we transitioned fully to Python\, streamlin
+ ed our development framework\, and embraced MLOps principles. Learn about 
+ some of our AI projects\, including image analysis and real-time inference
+ \, and our steps towards open-sourcing code to foster innovation in the en
+ ergy sector. Explore why Python is our go-to language for data science and
+  collaboration.
+LOCATION:Titanium3
+URL:https://pretalx.com/pyconde-pydata-2025/talk/JM3G8S/
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:Python Performance Unleashed: Essential Optimization Techniques Be
+ yond Libraries - Thomas Berger
+DTSTART;TZID=Europe/Berlin:20250423T114500
+DTEND;TZID=Europe/Berlin:20250423T121500
+DTSTAMP:20261109T222342Z
+UID:pretalx-pyconde-pydata-2025-AJDYRL@pretalx.com
+DESCRIPTION:Every Python developer faces performance challenges\, from slo
+ w data processing to memory-intensive operations. While external libraries
+  like Numba or Cython offer solutions\, understanding core Python optimiza
+ tion techniques is crucial for writing efficient code. This talk explores 
+ practical optimization strategies using Python's built-in capabilities\, d
+ emonstrating how to achieve significant performance improvements without e
+ xternal dependencies. Through real-world examples from machine learning pi
+ pelines and data processing applications\, we'll examine common bottleneck
+ s and their solutions. Whether you're building data pipelines\, web applic
+ ations\, or ML systems\, these techniques will help you write faster\, mor
+ e efficient Python code.
+LOCATION:Zeiss Plenary (Spectrum)
+URL:https://pretalx.com/pyconde-pydata-2025/talk/AJDYRL/
+END:VEVENT
+END:VCALENDAR

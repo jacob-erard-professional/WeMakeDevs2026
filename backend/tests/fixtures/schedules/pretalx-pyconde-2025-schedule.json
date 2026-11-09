@@ -1,0 +1,327 @@
+{
+  "$schema": "https://c3voc.de/schedule/schema.json",
+  "generator": {
+    "name": "pretalx",
+    "version": "2026.3.0.dev0",
+    "url": "https://pretalx.com"
+  },
+  "schedule": {
+    "url": "https://pretalx.com/pyconde-pydata-2025/schedule/",
+    "version": "1.5",
+    "base_url": "https://pretalx.com",
+    "conference": {
+      "acronym": "pyconde-pydata-2025",
+      "title": "PyCon DE & PyData 2025",
+      "start": "2025-04-23",
+      "end": "2025-04-25",
+      "daysCount": 1,
+      "timeslot_duration": "00:05",
+      "time_zone_name": "Europe/Berlin",
+      "colors": {
+        "primary": "#b7bcbf"
+      },
+      "rooms": [
+        {
+          "name": "Zeiss Plenary (Spectrum)",
+          "slug": "3893-zeiss-plenary-spectrum",
+          "guid": "cbef5dea-b209-5af2-a15b-df1d7d9a6581",
+          "description": "Ground floor",
+          "capacity": 1072
+        },
+        {
+          "name": "Titanium3",
+          "slug": "3894-titanium3",
+          "guid": "bfdfe5f6-faa1-5b37-a7cf-958ab3542af3",
+          "description": "2.0234, 2nd floor",
+          "capacity": 300
+        }
+      ],
+      "tracks": [
+        {
+          "name": "PyCon: MLOps & DevOps",
+          "slug": "5205-pycon-mlops-devops",
+          "color": "#000000"
+        },
+        {
+          "name": "PyCon: Programming & Software Engineering",
+          "slug": "5206-pycon-programming-software-engineering",
+          "color": "#000000"
+        },
+        {
+          "name": "PyCon: Python Language & Ecosystem",
+          "slug": "5207-pycon-python-language-ecosystem",
+          "color": "#000000"
+        },
+        {
+          "name": "PyData: Data Handling & Engineering",
+          "slug": "5211-pydata-data-handling-engineering",
+          "color": "#000000"
+        },
+        {
+          "name": "PyData: Generative AI",
+          "slug": "5214-pydata-generative-ai",
+          "color": "#000000"
+        },
+        {
+          "name": "Keynote",
+          "slug": "5223-keynote",
+          "color": "#000000"
+        }
+      ],
+      "days": [
+        {
+          "index": 1,
+          "date": "2025-04-23",
+          "day_start": "2025-04-23T04:00:00+02:00",
+          "day_end": "2025-04-24T03:59:00+02:00",
+          "rooms": {
+            "Zeiss Plenary (Spectrum)": [
+              {
+                "guid": "32ce63ca-96c6-58ac-b5d9-e6e4dfc3baaf",
+                "code": "3MNGN8",
+                "id": 64178,
+                "logo": null,
+                "date": "2025-04-23T10:30:00+02:00",
+                "start": "10:30",
+                "end": "2025-04-23T11:15:00+02:00",
+                "duration": "00:45",
+                "room": "Zeiss Plenary (Spectrum)",
+                "slug": "pyconde-pydata-2025-64178-reasonable-ai",
+                "url": "https://pretalx.com/pyconde-pydata-2025/talk/3MNGN8/",
+                "title": "Reasonable AI",
+                "subtitle": "",
+                "track": "Keynote",
+                "type": "Keynote",
+                "language": "en",
+                "abstract": "The relationship between humans and machines, especially in the context of Artificial Intelligence (AI), is shaped by hopes, concerns, and moral questions. On the one hand, advances in AI offer great promise: it can help us solve complex problems, improve healthcare, streamline workflows, and much more. Yet, at the same time, there are legitimate concerns about the control over this technology, its potential impact on jobs and society, and ethical issues related to discrimination and the loss of human autonomy. In the talk I shall will explore and illustrate the complex tension between innovation and moral responsibility in AI research.",
+                "description": "The relationship between humans and machines, especially in the context of Artificial Intelligence (AI), is shaped by hopes, concerns, and moral questions. On the one hand, advances in AI offer great promise: it can help us solve complex problems, improve healthcare, streamline workflows, and much more. Yet, at the same time, there are legitimate concerns about the control over this technology, its potential impact on jobs and society, and ethical issues related to discrimination and the loss of human autonomy. In the talk I shall will explore and illustrate the complex tension between innovation and moral responsibility in AI research.",
+                "recording_license": "",
+                "do_not_record": false,
+                "persons": [
+                  {
+                    "code": "B37CUN",
+                    "name": "Kristian Kersting",
+                    "avatar": "https://pretalx.com/media/avatars/B37CUN_yeIcueO.webp",
+                    "biography": "Kristian Kersting is co-director of the Hessian Center for AI (hessian.AI), head of research at the German Research Center for AI / Darmstadt, and professor of AI and machine learning at TU Darmstadt. After his PhD at the Univrsity of  Freiburg in 2006, he was with the MIT, Fraunhofer IAIS, the Univ...",
+                    "public_name": "Kristian Kersting",
+                    "guid": "3d9d4bd2-6ef6-5ce0-8b5b-db99fb024a5b",
+                    "url": "https://pretalx.com/pyconde-pydata-2025/speaker/B37CUN/"
+                  }
+                ],
+                "links": [],
+                "feedback_url": "https://pretalx.com/pyconde-pydata-2025/talk/3MNGN8/feedback/",
+                "origin_url": "https://pretalx.com/pyconde-pydata-2025/talk/3MNGN8/",
+                "attachments": []
+              },
+              {
+                "guid": "a928818e-3cd8-53f7-a7ee-5d4db0bfc4f9",
+                "code": "AJDYRL",
+                "id": 61317,
+                "logo": null,
+                "date": "2025-04-23T11:45:00+02:00",
+                "start": "11:45",
+                "end": "2025-04-23T12:15:00+02:00",
+                "duration": "00:30",
+                "room": "Zeiss Plenary (Spectrum)",
+                "slug": "pyconde-pydata-2025-61317-python-performance-unleashed-essential-optimization-techniques-beyond-libraries",
+                "url": "https://pretalx.com/pyconde-pydata-2025/talk/AJDYRL/",
+                "title": "Python Performance Unleashed: Essential Optimization Techniques Beyond Libraries",
+                "subtitle": "",
+                "track": "PyCon: Python Language & Ecosystem",
+                "type": "Talk",
+                "language": "en",
+                "abstract": "Every Python developer faces performance challenges, from slow data processing to memory-intensive operations. While external libraries like Numba or Cython offer solutions, understanding core Python optimization techniques is crucial for writing efficient code. This talk explores practical optimization strategies using Python's built-in capabilities, demonstrating how to achieve significant performance improvements without external dependencies. Through real-world examples from machine learning pipelines and data processing applications, we'll examine common bottlenecks and their solutions. Whether you're building data pipelines, web applications, or ML systems, these techniques will help y...",
+                "description": "Performance optimization remains a critical challenge in Python development. While Python's simplicity and extensive ecosystem make it the language of choice for many applications, its interpreted nature can lead to significant performance bottlenecks. This is particularly evident in data-intensive applications, machine learning pipelines, and large-scale production systems where every millisecond counts.\n\nMany developers immediately reach for external libraries or complex solutions when facing performance issues. However, Python's standard library and built-in features offer powerful optimization opportunities that are often overlooked. Understanding these fundamental optimization technique...",
+                "recording_license": "",
+                "do_not_record": false,
+                "persons": [
+                  {
+                    "code": "HRNBJX",
+                    "name": "Thomas Berger",
+                    "avatar": "https://pretalx.com/media/avatars/HRNBJX_hhPy86W.webp",
+                    "biography": "Hi, I’m Thomas Berger! I work as a Machine Learning Engineer at a FinTech company and also teach part-time as a lecturer. I’ve been working with Python for over six years, starting during my studies, where I focused on machine learning. For the last three years, I’ve been applying these skills profe...",
+                    "public_name": "Thomas Berger",
+                    "guid": "25186aa0-9f64-5b29-965c-cd76e681de91",
+                    "url": "https://pretalx.com/pyconde-pydata-2025/speaker/HRNBJX/"
+                  }
+                ],
+                "links": [],
+                "feedback_url": "https://pretalx.com/pyconde-pydata-2025/talk/AJDYRL/feedback/",
+                "origin_url": "https://pretalx.com/pyconde-pydata-2025/talk/AJDYRL/",
+                "attachments": [
+                  {
+                    "title": "Slides -23.04.2025",
+                    "url": "/media/pyconde-pydata-2025/submissions/AJDYRL/resources/_pyth_snTmAvH.html",
+                    "type": "related"
+                  }
+                ]
+              },
+              {
+                "guid": "d17252fa-6f5e-5ed6-8086-9fec72694333",
+                "code": "MRHNCV",
+                "id": 60702,
+                "logo": null,
+                "date": "2025-04-23T12:25:00+02:00",
+                "start": "12:25",
+                "end": "2025-04-23T13:10:00+02:00",
+                "duration": "00:45",
+                "room": "Zeiss Plenary (Spectrum)",
+                "slug": "pyconde-pydata-2025-60702-open-table-formats-in-the-wild-from-parquet-to-delta-lake-and-back",
+                "url": "https://pretalx.com/pyconde-pydata-2025/talk/MRHNCV/",
+                "title": "Open Table Formats in the Wild: From Parquet to Delta Lake and Back",
+                "subtitle": "",
+                "track": "PyData: Data Handling & Engineering",
+                "type": "Talk (long)",
+                "language": "en",
+                "abstract": "Open table formats have revolutionized analytical, columnar storage on cloud object stores with critical features like ACID compliance and enhanced metadata management, once exclusive to proprietary cloud data warehouses. Delta Lake, Iceberg, and Hudi have significantly advanced over traditional open file formats like Parquet and ORC.\n\nIn an effort to modernize our data architecture, we aimed to replace our Parquet-based bronze layer with Delta Lake, anticipating better query performance, reduced maintenance, native support for incremental processing, and more. While our initial pilot showed promise, we encountered unexpected pitfalls that ultimately brought us back to where we began.\n\nCurio...",
+                "description": "# Description\n\nOpen Table Formats (OTF) such as Hudi, Iceberg and Delta Lake have disruptively changed the data engineering landscape in recent years. While the Parquet file format has evolved as the de-facto standard for open, interoperable columnar storage for analyical workloads, it lacked first class support for critical features such as ACID compliance, incremental processing, flexible schema & partioning evolution and scalable meta data management. This led to increased development and maintenance efforts while building idempotent and failure tolerant data pipelines that often resulted in custom frameworks. OTFs solve all of these issues via providing a sophisticated meta data layer an...",
+                "recording_license": "",
+                "do_not_record": false,
+                "persons": [
+                  {
+                    "code": "3CXHP7",
+                    "name": "Franz Wöllert",
+                    "avatar": "https://pretalx.com/media/avatars/3CXHP7_8G8qehl.webp",
+                    "biography": "Hi my name is Franz and I’m an open source and python enthuisiast:\n\n- father of 3 girls\n- major in psychology\n- chess hobbiyst\n- competitive ultimate frisbee player\n- likes cooking and baking sourdough bread",
+                    "public_name": "Franz Wöllert",
+                    "guid": "8764d05f-16f7-53ad-adb1-54a03358f2b4",
+                    "url": "https://pretalx.com/pyconde-pydata-2025/speaker/3CXHP7/"
+                  }
+                ],
+                "links": [],
+                "feedback_url": "https://pretalx.com/pyconde-pydata-2025/talk/MRHNCV/feedback/",
+                "origin_url": "https://pretalx.com/pyconde-pydata-2025/talk/MRHNCV/",
+                "attachments": [
+                  {
+                    "title": "Slides",
+                    "url": "/media/pyconde-pydata-2025/submissions/MRHNCV/resources/Open_T_Ylyv86n.pdf",
+                    "type": "related"
+                  }
+                ]
+              }
+            ],
+            "Titanium3": [
+              {
+                "guid": "3b483832-2e84-5f59-8f7a-7be98a6a52c8",
+                "code": "JM3G8S",
+                "id": 60161,
+                "logo": null,
+                "date": "2025-04-23T11:45:00+02:00",
+                "start": "11:45",
+                "end": "2025-04-23T12:15:00+02:00",
+                "duration": "00:30",
+                "room": "Titanium3",
+                "slug": "pyconde-pydata-2025-60161-why-e-on-loves-python",
+                "url": "https://pretalx.com/pyconde-pydata-2025/talk/JM3G8S/",
+                "title": "Why E.ON Loves Python",
+                "subtitle": "",
+                "track": "PyCon: MLOps & DevOps",
+                "type": "Talk",
+                "language": "en",
+                "abstract": "Join me as I share my 20-year journey with Python and its pivotal role at E.ON. Discover how we transitioned fully to Python, streamlined our development framework, and embraced MLOps principles. Learn about some of our AI projects, including image analysis and real-time inference, and our steps towards open-sourcing code to foster innovation in the energy sector. Explore why Python is our go-to language for data science and collaboration.",
+                "description": "In this talk, I will share my journey with Python, spanning over 20 years, and how it has become an integral part of our work at E.ON. My experience with open source began over 30 years ago during my research as a Theoretical Particle Physicist, where sharing insights and code was a daily practice. Transitioning to a software developer role at a start-up, I initially used Perl for various tasks but soon realized the challenges of code readability and collaboration. Python, with its enforced indentation and readability, quickly became my language of choice.\n\nAt E.ON, Python is our go-to language for Data Science tasks. In our team we recently migrated another programming language codebase to...",
+                "recording_license": "",
+                "do_not_record": false,
+                "persons": [
+                  {
+                    "code": "BDNEEF",
+                    "name": "Christer Friberg",
+                    "avatar": "https://pretalx.com/media/avatars/BDNEEF_dd7ji9O.webp",
+                    "biography": "Christer Friberg is a Senior Machine Learning Engineer at E.ON Energidistribution AB in Malmö, Sweden. With a background in theoretical particle physics, Christer transitioned into the field of machine learning and software development, leveraging open-source technologies like Python to drive innova...",
+                    "public_name": "Christer Friberg",
+                    "guid": "5450110f-8d4e-56a8-8e90-dce5bb8493c2",
+                    "url": "https://pretalx.com/pyconde-pydata-2025/speaker/BDNEEF/"
+                  }
+                ],
+                "links": [],
+                "feedback_url": "https://pretalx.com/pyconde-pydata-2025/talk/JM3G8S/feedback/",
+                "origin_url": "https://pretalx.com/pyconde-pydata-2025/talk/JM3G8S/",
+                "attachments": []
+              },
+              {
+                "guid": "654cd976-cd5e-5d63-a7f7-0b6593cfa4bf",
+                "code": "S8MUBF",
+                "id": 60094,
+                "logo": null,
+                "date": "2025-04-23T12:25:00+02:00",
+                "start": "12:25",
+                "end": "2025-04-23T13:10:00+02:00",
+                "duration": "00:45",
+                "room": "Titanium3",
+                "slug": "pyconde-pydata-2025-60094-why-exceptions-are-just-sophisticated-gotos-and-how-to-move-beyond",
+                "url": "https://pretalx.com/pyconde-pydata-2025/talk/S8MUBF/",
+                "title": "Why Exceptions Are Just Sophisticated Gotos - and How to Move Beyond",
+                "subtitle": "",
+                "track": "PyCon: Programming & Software Engineering",
+                "type": "Talk (long)",
+                "language": "en",
+                "abstract": "\"Why Exceptions Are Just Sophisticated Gotos - and How to Move Beyond\" explores a common programming tool with a fresh perspective. While exceptions are a key feature in Python and other languages, they share surprising similarities with the notorious goto statement. This talk examines those parallels, the problems exceptions can create, and practical alternatives for better code. Attendees will gain a clear understanding of modern programming concepts and the evolution of programming.",
+                "description": "Exceptions have long been seen as an improvement over error-handling approaches like goto. However, they can introduce complexity and obscure control flow when used without care. This talk will critically examine exceptions, outline the similarities to goto, and explore better ways to handle errors in programming.\n\n### Outline:\n\n1. Introduction (5 minutes)\n    - The historical role of goto in programming.\n    - Spaghetti code and the rise of structured programming.\n    - How exceptions emerged as an alternative.\n2. Why and What Are Exceptions (10 minutes)\n    - Why exceptions were introduced.\n    - How they became mainstream in languages like Java and C++.\n    - Common problems caused by exc...",
+                "recording_license": "",
+                "do_not_record": false,
+                "persons": [
+                  {
+                    "code": "8LQU9C",
+                    "name": "Florian Wilhelm",
+                    "avatar": "https://pretalx.com/media/avatars/8LQU9C_cjSxM8b.webp",
+                    "biography": "Florian is Head of Data Science & Mathematical Modeling at inovex GmbH, an IT project center driven by innovation and quality, focusing its services on ‘Digital Transformation’. He holds a PhD in mathematics, has more than 10 years of experience in predictive & prescriptive analytics use-cases and l...",
+                    "public_name": "Florian Wilhelm",
+                    "guid": "57127497-53e8-5705-b197-b21e82eeb3d9",
+                    "url": "https://pretalx.com/pyconde-pydata-2025/speaker/8LQU9C/"
+                  }
+                ],
+                "links": [],
+                "feedback_url": "https://pretalx.com/pyconde-pydata-2025/talk/S8MUBF/feedback/",
+                "origin_url": "https://pretalx.com/pyconde-pydata-2025/talk/S8MUBF/",
+                "attachments": [
+                  {
+                    "title": "Slides",
+                    "url": "/media/pyconde-pydata-2025/submissions/S8MUBF/resources/Evolut_cctxhcL.pdf",
+                    "type": "related"
+                  }
+                ]
+              },
+              {
+                "guid": "93375c74-1196-5bf6-9067-b59f83af1962",
+                "code": "G3AT7E",
+                "id": 61362,
+                "logo": null,
+                "date": "2025-04-23T14:30:00+02:00",
+                "start": "14:30",
+                "end": "2025-04-23T15:00:00+02:00",
+                "duration": "00:30",
+                "room": "Titanium3",
+                "slug": "pyconde-pydata-2025-61362-llm-inference-arithmetics-the-theory-behind-model-serving",
+                "url": "https://pretalx.com/pyconde-pydata-2025/talk/G3AT7E/",
+                "title": "LLM Inference Arithmetics: the Theory behind Model Serving",
+                "subtitle": "",
+                "track": "PyData: Generative AI",
+                "type": "Talk",
+                "language": "en",
+                "abstract": "Have you ever asked yourself how parameters for an LLM are counted, or wondered why Gemma 2B is actually closer to a 3B model? You have no clue about what a KV-Cache is? (And, before you ask: no, it's not a Redis fork.) Do you want to find out how much GPU VRAM you need to run your model smoothly? \n\nIf your answer to any of these questions was \"yes\", or you have another doubt about inference with LLMs - such as batching, or time-to-first-token - this talk is for you. Well, except for the Redis part.",
+                "description": "The talk will cover the theory necessary to understand how to serve LLMs. The talk covers the math behind transformers inference in an accessible and light way. By the end of the talk, attendants will learn:\n\n1. How to count the parameters in an LLM, especially the ones in the attention layers.\n2. The difference between compute and memory in the context of LLM inference.\n3. That LLM inference is made up of two parts: prefill and decoding.\n4. What is an LLM server, and what features they implement to optimise GPU memory usage and reduce latency\n4. How batching affects your inference metrics, like time-to-first-token.\n\nThe talk will cover:\n\n**Did you pay attention?** (4 min). A short review of...",
+                "recording_license": "",
+                "do_not_record": false,
+                "persons": [
+                  {
+                    "code": "LCEK33",
+                    "name": "Luca Baggi",
+                    "avatar": "https://pretalx.com/media/avatars/LCEK33_5eAzatc.webp",
+                    "biography": "AI Engineer at xtream by day, and open source maintainer by night. I strive to be an active part of the Python and PyData communities - e.g. as an organiser of PyData Milan. Feel free to reach out!",
+                    "public_name": "Luca Baggi",
+                    "guid": "67583db7-da6f-5b51-844f-9cf951b9a0a6",
+                    "url": "https://pretalx.com/pyconde-pydata-2025/speaker/LCEK33/"
+                  }
+                ],
+                "links": [],
+                "feedback_url": "https://pretalx.com/pyconde-pydata-2025/talk/G3AT7E/feedback/",
+                "origin_url": "https://pretalx.com/pyconde-pydata-2025/talk/G3AT7E/",
+                "attachments": []
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
