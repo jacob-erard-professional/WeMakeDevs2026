@@ -44,7 +44,6 @@ T = TypeVar("T")
 
 ES_URL = os.getenv("ES_URL", "http://localhost:9200")
 ES_API_KEY = os.getenv("ES_API_KEY")
-ORGANIZER_API_KEY = os.getenv("ORGANIZER_API_KEY", "")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 # Even on purpose: bulk payloads are [action, document] pairs and a batch must never split one.
 BULK_BATCH_SIZE = 500
@@ -94,6 +93,17 @@ _SEMANTIC = {"type": "semantic_text", "inference_id": JINA}
 # Index bodies from backend/docs/vector-matching.md. Serverless rejects shard/replica/refresh
 # settings, so only the analysis block is passed. `talks-archive` is read-only and not ours.
 INDEX_BODIES: dict[str, dict[str, Any]] = {
+    "conferences": {
+        "mappings": {
+            "dynamic": "strict",
+            "properties": {
+                "conference_id": _ID,
+                "name": _TEXT,
+                "organizer_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
+                "created_at": _DATE,
+            },
+        },
+    },
     "talks": {
         "mappings": {
             "dynamic": "strict",
@@ -237,7 +247,7 @@ if CORS_ORIGINS:
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Organizer-Key"],
+        allow_headers=["Authorization", "Content-Type", "X-Organizer-Token"],
         allow_credentials=False,
     )
 FastAPIInstrumentor.instrument_app(app)
@@ -318,6 +328,10 @@ class ConfirmSchedule(BaseModel):
     talks: list[dict[str, Any]] = Field(min_length=1, max_length=1000)
 
 
+class CreateConference(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+
 # --- Elasticsearch access ----------------------------------------------------------------------
 
 
@@ -375,11 +389,21 @@ async def attendee_claim(
     return conference_id, attendee_id
 
 
-def require_organizer(x_organizer_key: str | None = Header(default=None)) -> None:
-    if not ORGANIZER_API_KEY:
-        raise HTTPException(503, "Organizer authorization is not configured")
-    if not x_organizer_key or not secrets.compare_digest(x_organizer_key, ORGANIZER_API_KEY):
-        raise HTTPException(401, "Organizer authorization required")
+async def verify_organizer(conference_id: str, organizer_token: str | None) -> None:
+    """Authorize only the browser session that created this conference."""
+    if not organizer_token:
+        raise HTTPException(401, "Organizer token required")
+    conference = await es_call(
+        "read_organizer_claim",
+        lambda: es.get(
+            index="conferences",
+            id=conference_id,
+            source_includes=["organizer_token_sha256"],
+        )["_source"],
+    )
+    presented = hashlib.sha256(organizer_token.encode()).hexdigest()
+    if not hmac.compare_digest(conference.get("organizer_token_sha256", ""), presented):
+        raise HTTPException(401, "Organizer token required")
 
 
 def eligible_attendees(conference_id: str, attendee_id: str) -> dict[str, Any]:
@@ -569,6 +593,64 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/conferences", status_code=201)
+async def create_conference(payload: CreateConference) -> dict[str, str]:
+    """Start an organizer session and return its one-time-visible management token."""
+    await ensure_indices_ready()
+    conference_id = f"conference-{uuid4().hex[:12]}"
+    organizer_token = secrets.token_urlsafe(32)
+    await es_call(
+        "create_conference",
+        lambda: es.index(
+            index="conferences",
+            id=conference_id,
+            document={
+                "conference_id": conference_id,
+                "name": payload.name.strip(),
+                "organizer_token_sha256": hashlib.sha256(organizer_token.encode()).hexdigest(),
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+            op_type="create",
+            refresh="wait_for",
+        ),
+    )
+    return {"conference_id": conference_id, "organizer_token": organizer_token}
+
+
+@app.get("/join/{conference_id}")
+async def join_conference(conference_id: str) -> dict[str, Any]:
+    """Resolve a QR/link to its confirmed, public schedule without exposing attendee data."""
+    conference = await es_call(
+        "read_join_conference_metadata",
+        lambda: es.get(index="conferences", id=conference_id, source_includes=["name"])["_source"],
+    )
+    hits = await es_call(
+        "read_join_conference",
+        lambda: es.search(
+            index="talks",
+            size=1000,
+            source=["talk_id", "title", "abstract", "track", "room", "start_time", "end_time"],
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"conference_id": conference_id}},
+                        {"term": {"confirmed": True}},
+                    ]
+                }
+            },
+            sort=[{"start_time": {"order": "asc"}}],
+        )["hits"]["hits"],
+        **{"db.elasticsearch.index": "talks"},
+    )
+    if not hits:
+        raise HTTPException(404, "Conference not found or has no confirmed schedule")
+    return {
+        "conference_id": conference_id,
+        "name": conference["name"],
+        "talks": [hit["_source"] for hit in hits],
+    }
+
+
 @app.post("/save-user-data")
 async def save_user_data(
     request: Request, identity: tuple[str, str] | None = Depends(attendee_claim)
@@ -733,9 +815,12 @@ async def conference_talk(conference_id: str, talk_id: str) -> dict[str, Any]:
 
 @app.get("/conferences/{conference_id}/talks/{talk_id}/attendees")
 async def attendees_for_talk(
-    conference_id: str, talk_id: str, _: None = Depends(require_organizer)
+    conference_id: str,
+    talk_id: str,
+    x_organizer_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Organizer-only Q4: names are limited to attendees who opted into discovery."""
+    await verify_organizer(conference_id, x_organizer_token)
     talk = await conference_talk(conference_id, talk_id)
     query_text = f"{talk.get('title', '')}. {talk.get('abstract', '')}".strip()
     hits = await es_call(
@@ -880,8 +965,9 @@ async def upload_schedule(
     conference_id: str,
     source_url: HttpUrl | None = None,
     file: UploadFile | None = File(default=None),
-    _: None = Depends(require_organizer),
+    x_organizer_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    await verify_organizer(conference_id, x_organizer_token)
     if bool(source_url) == bool(file):
         raise HTTPException(422, "Provide exactly one of source_url or file")
     content: bytes | None = None
@@ -976,8 +1062,9 @@ def talk_document(
 
 @app.post("/confirm-schedule")
 async def confirm_schedule(
-    payload: ConfirmSchedule, _: None = Depends(require_organizer)
+    payload: ConfirmSchedule, x_organizer_token: str | None = Header(default=None)
 ) -> dict[str, Any]:
+    await verify_organizer(payload.conference_id, x_organizer_token)
     await ensure_indices_ready()
     normalized: list[dict[str, Any]] = []
     seen_ids: set[str] = set()

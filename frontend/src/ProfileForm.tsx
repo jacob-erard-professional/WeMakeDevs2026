@@ -8,13 +8,13 @@ import { Flow } from './Flow';
 import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 const blank: Attendee = {
-  name: '', bio: '', interests: '', linkedin: '', resumeName: '',
+  name: '', email: '', bio: '', interests: '', lookingFor: '', linkedin: '',
   resumePublic: false, discoverable: false, unavailable: [],
 };
 
 export function ProfileForm({ initial, onSave, onStepChange }: {
   initial?: Attendee;
-  onSave: (profile: Attendee) => void;
+  onSave: (profile: Attendee) => Promise<void>;
   onStepChange: () => void;
 }) {
   const [profile, setProfile] = useState(initial ?? blank);
@@ -22,6 +22,7 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   function update(changes: Partial<Attendee>) {
     setProfile((current) => ({ ...current, ...changes }));
@@ -33,7 +34,10 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
       const result = await getDocumentAsync({
         type: 'application/pdf', copyToCacheDirectory: false, base64: false,
       });
-      if (!result.canceled) update({ resumeName: result.assets[0].name });
+      if (!result.canceled) {
+        const { uri, name, mimeType, file } = result.assets[0];
+        update({ resume: { uri, name, mimeType, file } });
+      }
     } catch {
       setError('Could not open the file picker. Try again or continue with a bio.');
     }
@@ -61,8 +65,13 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
   }
 
   function continueToAvailability() {
-    if (!profile.name.trim() || (!profile.bio.trim() && !profile.resumeName)) {
+    if (!profile.name.trim() || (!profile.bio.trim() && !profile.resume)) {
       setError('Enter your name and add a bio or choose a résumé.');
+      return;
+    }
+    const email = profile.email.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Enter a valid email address or leave it blank.');
       return;
     }
     const linkedin = profile.linkedin.trim();
@@ -70,16 +79,24 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
       setError('Enter a LinkedIn profile URL such as https://www.linkedin.com/in/sample or leave it blank.');
       return;
     }
-    update({ name: profile.name.trim(), linkedin });
+    update({ name: profile.name.trim(), email, linkedin });
     changeStep('availability');
   }
 
-  function save() {
+  async function save() {
     if (start.trim() || end.trim()) {
       setError('Add the pending time block or clear both time fields before continuing.');
       return;
     }
-    onSave(profile);
+    setSaving(true);
+    setError('');
+    try {
+      await onSave(profile);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not save your profile.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -89,17 +106,19 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
         <Heading large>Tell us about yourself</Heading>
         <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
         <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
+        <Field label="Email (optional, shared only with connections you accept)" value={profile.email} onChangeText={(email) => update({ email })} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" maxLength={320} />
         <Field label="Bio" multiline value={profile.bio} onChangeText={(bio) => update({ bio })} maxLength={1000} />
         <Field label="Interests, separated by commas" value={profile.interests} onChangeText={(interests) => update({ interests })} placeholder="Kubernetes, Observability" maxLength={200} />
+        <Field label="What do you want to see?" multiline value={profile.lookingFor} onChangeText={(lookingFor) => update({ lookingFor })} placeholder="Talks, people, or topics you’re here for" maxLength={2000} />
         <Field label="LinkedIn profile URL (optional)" value={profile.linkedin} onChangeText={(linkedin) => update({ linkedin })} autoCapitalize="none" keyboardType="url" maxLength={300} />
-        <Copy>The demo remembers the résumé filename for this session. It never uploads or reads the document.</Copy>
+        <Copy>Your résumé is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
         <View style={styles.row}>
           <Action title="Choose résumé PDF" onPress={pickResume} secondary />
-          {profile.resumeName ? <Action title="Remove résumé" onPress={() => update({ resumeName: '', resumePublic: false })} secondary /> : null}
+          {profile.resume ? <Action title="Remove résumé" onPress={() => update({ resume: undefined, resumePublic: false })} secondary /> : null}
         </View>
-        {profile.resumeName ? (
+        {profile.resume ? (
           <View style={styles.stack}>
-            <Copy>Selected file: {profile.resumeName}</Copy>
+            <Copy>Selected file: {profile.resume.name}</Copy>
             <View style={styles.row}>
               <Action title="Private résumé" selected={!profile.resumePublic} onPress={() => update({ resumePublic: false })} secondary />
               <Action title="Public résumé" selected={profile.resumePublic} onPress={() => update({ resumePublic: true })} secondary />
@@ -130,7 +149,7 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
         })}
         {error ? <Message error>{error}</Message> : null}
         <View style={styles.row}>
-          <Action title="See my recommendations" onPress={save} />
+          <Action title={saving ? 'Saving profile…' : 'See my recommendations'} onPress={save} disabled={saving} />
           <Action title="Back to profile" onPress={() => changeStep('about')} secondary />
         </View>
       </Section>}

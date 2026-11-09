@@ -6,6 +6,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
+import { joinLiveConference, saveLiveProfile } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
 import { clearJoinPath, joinCodeFromLocation, parseJoinCode } from './src/joinLink';
@@ -29,12 +30,18 @@ function JoinConference({ conferences, onJoin }: {
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
 
-  function join(value: string) {
-    // Accepts a bare code or a scanned/pasted /join/<code> link.
+  async function join(value: string) {
+    // Accepts a bare conference id or a scanned/pasted /join/<id> link.
     const parsed = parseJoinCode(value);
-    const conference = parsed ? conferences.find((item) => item.code === parsed) : undefined;
-    if (conference) { clearJoinPath(); onJoin(conference); }
-    else setError('This code doesn’t match a conference in this session. Check the code or try the sample conference.');
+    if (!parsed) { setError('Enter the conference code or scan its QR code.'); return; }
+    setError('');
+    try {
+      const conference = conferences.find((item) => item.code === parsed) ?? await joinLiveConference(parsed);
+      clearJoinPath();
+      onJoin(conference);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not join the conference.');
+    }
   }
 
   // Web: opened via a /join/<code> link (e.g. from the organizer QR), so join right away.
@@ -50,7 +57,7 @@ function JoinConference({ conferences, onJoin }: {
           <View style={layout.intro}>
             <Label>Attendee check-in</Label>
             <Text accessibilityRole="header" style={layout.coverTitle}>Find your people.</Text>
-            <Copy>Make time for the talks you care about and the people you want to meet.</Copy>
+              <Copy>Make time for the talks you care about and the people you want to meet.</Copy>
           </View>
           <View style={layout.checkIn}>
             <Section>
@@ -72,27 +79,21 @@ function JoinConference({ conferences, onJoin }: {
 }
 
 export default function App() {
-  const [conferences, setConferences] = useState([demoConference]);
+  const conferences = [demoConference];
   const { page, navigate } = useRoute();
   const [conference, setConference] = useState<Conference>();
   const [profile, setProfile] = useState<Attendee>();
   const [editing, setEditing] = useState(false);
   const [requested, setRequested] = useState<string[]>([]);
+  const [attendeeToken, setAttendeeToken] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-
-  function publish(name: string, talks: Conference['talks']) {
-    const code = `event-${conferences.length}`;
-    const event = { name, talks, code };
-    setConferences((items) => [...items, event]);
-    scrollToTop();
-    return event;
-  }
 
   function changeConference(next?: Conference) {
     setConference(next);
     setProfile(undefined);
     setEditing(false);
     setRequested([]);
+    setAttendeeToken(undefined);
   }
 
   // Public site pages come from the URL; /join and /join/<code> show the attendee flow.
@@ -101,6 +102,15 @@ export default function App() {
 
   function scrollToTop() {
     scroll.current?.scrollTo({ y: 0, animated: false });
+  }
+
+  async function saveProfile(next: Attendee) {
+    if (conference && conference.code !== demoConference.code) {
+      const result = await saveLiveProfile(conference, next, attendeeToken);
+      if (result.attendee_token) setAttendeeToken(result.attendee_token);
+    }
+    setProfile(next);
+    setEditing(false);
   }
 
   useEffect(scrollToTop, [screen]);
@@ -113,7 +123,7 @@ export default function App() {
           <SiteShell page={page} navigate={navigate} scrollRef={scroll}>
             <Flow step={screen}>
               {page === 'home' ? <Landing navigate={navigate} /> : page === 'events' ? <PastEvents /> : page === 'talks' ? <PastTalks />
-              : page === 'organizers' ? <OrganizersPage><Organizer onPublish={publish} /></OrganizersPage>
+              : page === 'organizers' ? <OrganizersPage><Organizer /></OrganizersPage>
               : !conference ? (
                 <Container style={layout.content}>
                   <JoinConference conferences={conferences} onJoin={changeConference} />
@@ -126,7 +136,7 @@ export default function App() {
                     <Action title="Switch conference" onPress={() => changeConference()} secondary />
                   </View>
                   {!profile || editing ? (
-                    <ProfileForm initial={profile} onStepChange={scrollToTop} onSave={(next) => { setProfile(next); setEditing(false); }} />
+                    <ProfileForm initial={profile} onStepChange={scrollToTop} onSave={saveProfile} />
                   ) : (
                     <Recommendations conference={conference} profile={profile} requested={requested}
                       onEdit={() => setEditing(true)}
