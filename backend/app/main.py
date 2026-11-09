@@ -13,12 +13,14 @@ from uuid import uuid4
 
 import qrcode
 from elasticsearch import Elasticsearch, NotFoundError
+from opentelemetry import trace
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, HttpUrl
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("conference_api")
+tracer = trace.get_tracer("conference_api")
 app = FastAPI(title="Conference API", version="0.1.0")
 
 ES_URL = os.getenv("ES_URL", "http://localhost:9200")
@@ -86,14 +88,15 @@ def require_organizer(x_organizer_key: str | None = Header(default=None)) -> Non
 
 
 def es_call(operation: str, fn: Any) -> Any:
-    started = datetime.now(UTC)
-    try:
-        result = fn()
-        logger.info("es_operation=%s outcome=success duration_ms=%d", operation, int((datetime.now(UTC)-started).total_seconds()*1000))
-        return result
-    except Exception:
-        logger.exception("es_operation=%s outcome=error", operation)
-        raise HTTPException(503, "Conference data store unavailable") from None
+    with tracer.start_as_current_span(operation):
+        started = datetime.now(UTC)
+        try:
+            result = fn()
+            logger.info("es_operation=%s outcome=success duration_ms=%d", operation, int((datetime.now(UTC)-started).total_seconds()*1000))
+            return result
+        except Exception:
+            logger.exception("es_operation=%s outcome=error", operation)
+            raise HTTPException(503, "Conference data store unavailable") from None
 
 
 @app.middleware("http")
