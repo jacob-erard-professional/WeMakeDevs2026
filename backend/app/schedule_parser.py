@@ -26,11 +26,11 @@ import re
 from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from app import schedule_adapters as adapters
-from app.schedule_fetch import Fetched, safe_fetch
+from app.schedule_fetch import FetchError, Fetched, UnsafeUrlError, safe_fetch
 
 DEFAULT_SCHEDULE_MODEL = "gpt-5.4-mini"
 MAX_LLM_TEXT_CHARS = 120_000
@@ -469,8 +469,15 @@ def parse_schedule(
         if sniff_format(body, ctype) == "html":
             link = find_structured_link(body[:1_000_000].decode("utf-8", "replace"), final_url)
             if link:
-                hop = safe_fetch(rewrite_url(link))
-                if sniff_format(hop.body, hop.content_type) in {"ics", "json", "xml"}:
+                try:
+                    hop = safe_fetch(rewrite_url(urljoin(final_url, link)))
+                except (FetchError, UnsafeUrlError):
+                    hop = None
+                if hop is not None and sniff_format(hop.body, hop.content_type) in {
+                    "ics",
+                    "json",
+                    "xml",
+                }:
                     body, ctype, final_url = hop.body, hop.content_type, hop.url
         result = parse_bytes(
             conference_id=conference_id,
