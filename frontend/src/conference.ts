@@ -15,6 +15,7 @@ export type Attendee = {
   interests: string;
   linkedin: string;
   resumeName: string;
+  resumeUri?: string;
   resumePublic: boolean;
   discoverable: boolean;
   unavailable: TimeRange[];

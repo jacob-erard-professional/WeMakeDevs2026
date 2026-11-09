@@ -8,7 +8,7 @@ import { Flow } from './Flow';
 import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
 const blank: Attendee = {
-  name: '', bio: '', interests: '', linkedin: '', resumeName: '',
+  name: '', bio: '', interests: '', linkedin: '', resumeName: '', resumeUri: undefined,
   resumePublic: false, discoverable: false, unavailable: [],
 };
 
@@ -34,7 +34,7 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
       const result = await getDocumentAsync({
         type: 'application/pdf', copyToCacheDirectory: false, base64: false,
       });
-      if (!result.canceled) update({ resumeName: result.assets[0].name });
+      if (!result.canceled) update({ resumeName: result.assets[0].name, resumeUri: result.assets[0].uri });
     } catch {
       setError('Could not open the file picker. Try again or continue with a bio.');
     }
@@ -104,7 +104,7 @@ export function ProfileForm({ initial, onSave, onStepChange }: {
         <Copy>The demo remembers the résumé filename for this session. It never uploads or reads the document.</Copy>
         <View style={styles.row}>
           <Action title="Choose résumé PDF" onPress={pickResume} secondary />
-          {profile.resumeName ? <Action title="Remove résumé" onPress={() => update({ resumeName: '', resumePublic: false })} secondary /> : null}
+          {profile.resumeName ? <Action title="Remove résumé" onPress={() => update({ resumeName: '', resumeUri: undefined, resumePublic: false })} secondary /> : null}
         </View>
         {profile.resumeName ? (
           <View style={styles.stack}>

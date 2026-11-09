@@ -11,9 +11,11 @@ import { Action, colors, Copy, Field, Heading, Label, Message, Section, styles }
 type ScheduleAsset = { uri: string; name: string };
 
 function displayTime(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp || 'Time TBA';
   return new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Denver', weekday: 'short', hour: 'numeric', minute: '2-digit',
-  }).format(new Date(timestamp));
+  }).format(date);
 }
 
 export function Organizer() {
@@ -65,7 +67,7 @@ export function Organizer() {
         </View>
         <View style={passStyles.details}>
           <Label>JOIN LINK</Label><Text selectable style={passStyles.url}>{published.joinUrl}</Text>
-          <Copy>Attendees can scan this QR code or open the link in any browser.</Copy>
+          <Copy>Attendees can scan this QR code in the app, or paste this link into the app's conference code field.</Copy>
         </View>
       </View>
     </Flow>

@@ -22,9 +22,11 @@ export type ParsedTalk = {
 };
 
 function venueMinutes(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return 0;
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date(timestamp));
+  }).formatToParts(date);
   const value = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
   return value('hour') * 60 + value('minute');
 }
@@ -65,24 +67,33 @@ export async function saveLiveProfile(
   profile: Attendee,
   attendeeToken?: string,
 ) {
-  const response = await fetch(`${apiBase}/save-user-data`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(attendeeToken ? { Authorization: `Bearer ${attendeeToken}` } : {}),
-    },
-    body: JSON.stringify({
-      conference_id: conference.code,
-      name: profile.name,
-      bio: profile.bio,
-      interests: profile.interests.split(',').map((item) => item.trim()).filter(Boolean),
-      linkedin_url: profile.linkedin || undefined,
-      discovery_opt_in: profile.discoverable,
-      // Time ranges are currently entered as clock times without a date/time zone. They remain
-      // local until the UI collects timezone-aware timestamps for the API.
-      blockout_times: [],
-    }),
-  });
+  const profileData = {
+    conference_id: conference.code,
+    name: profile.name,
+    bio: profile.bio,
+    interests: profile.interests.split(',').map((item) => item.trim()).filter(Boolean),
+    linkedin_url: profile.linkedin || undefined,
+    discovery_opt_in: profile.discoverable,
+    share_resume: profile.resumePublic,
+    // Time ranges are currently entered as clock times without a date/time zone. They remain
+    // local until the UI collects timezone-aware timestamps for the API.
+    blockout_times: [],
+  };
+  const headers: Record<string, string> = attendeeToken
+    ? { Authorization: `Bearer ${attendeeToken}` }
+    : {};
+  let body: BodyInit;
+  if (profile.resumeUri) {
+    const file = await (await fetch(profile.resumeUri)).blob();
+    const form = new FormData();
+    form.append('profile', JSON.stringify(profileData));
+    form.append('resume', file, profile.resumeName);
+    body = form;
+  } else {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(profileData);
+  }
+  const response = await fetch(`${apiBase}/save-user-data`, { method: 'POST', headers, body });
   if (!response.ok) throw new Error('Could not save your profile to the conference server.');
   return response.json() as Promise<{ attendee_token?: string }>;
 }
