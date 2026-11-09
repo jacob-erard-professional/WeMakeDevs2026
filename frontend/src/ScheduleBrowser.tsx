@@ -63,12 +63,10 @@ function RelatedTalks({ conference, talk, token, onProfile }: {
     <View style={styles.stack}>
       <Heading>Similar past talks</Heading>
       {!token ? (
-        conference.sample ? <Copy>Similar past talks require a live conference.</Copy> : (
           <>
             <Copy>Complete your attendee profile to search the archive for this session.</Copy>
             <Action title="Complete attendee profile" onPress={onProfile} />
           </>
-        )
       ) : null}
       {token && !items && !error ? <Message>Finding similar past talks…</Message> : null}
       {error ? (

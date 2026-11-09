@@ -14,7 +14,7 @@ import secrets
 from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -320,6 +320,45 @@ class Blockout(BaseModel):
 
 class PeopleSearch(BaseModel):
     note: str = Field(default="", max_length=500)
+
+
+CatalogSource = Literal["published", "archive"]
+CATALOG_PAGE_SIZE = 20
+CATALOG_LAST_OFFSET = 980
+CATALOG_LAST_SEARCH_OFFSET = 180
+SEED_CONFERENCE_NAME = "cloud native hackathon slc 2026"
+LEGACY_SEED_CONFERENCE_ID = "cnh-slc-2026"
+PUBLISHED_TALK_SOURCE = [
+    "conference_id",
+    "talk_id",
+    "title",
+    "abstract",
+    "track",
+    "speakers",
+    "room",
+    "start_time",
+]
+ARCHIVE_TALK_SOURCE = [
+    "id",
+    "conference_id",
+    "conference",
+    "title",
+    "abstract",
+    "tracks",
+    "speakers",
+    "room",
+    "start",
+    "url",
+    "video_url",
+    "year",
+]
+
+
+class CatalogSearch(BaseModel):
+    source: CatalogSource = "published"
+    query: str = Field(default="", max_length=160)
+    event_id: str | None = Field(default=None, max_length=128)
+    offset: int = Field(default=0, ge=0, le=CATALOG_LAST_OFFSET)
 
 
 class SaveUserData(BaseModel):
@@ -711,6 +750,192 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+async def published_catalog_events() -> list[dict[str, Any]]:
+    """Discover confirmed schedules, including events published before status existed."""
+    buckets = await es_call(
+        "catalog_published_events",
+        lambda: es.search(
+            index="talks",
+            size=0,
+            query={"term": {"confirmed": True}},
+            aggs={
+                "events": {
+                    "terms": {
+                        "field": "conference_id",
+                        "size": 200,
+                        "order": {"last_end": "desc"},
+                    },
+                    "aggs": {
+                        "first_start": {
+                            "min": {"field": "start_time", "format": "strict_date_time"}
+                        },
+                        "last_end": {"max": {"field": "end_time", "format": "strict_date_time"}},
+                    },
+                }
+            },
+        )["aggregations"]["events"]["buckets"],
+    )
+    if not buckets:
+        return []
+    docs = await es_call(
+        "catalog_conference_names",
+        lambda: es.mget(
+            index="conferences",
+            ids=[bucket["key"] for bucket in buckets],
+            source_includes=["name", "schedule_status"],
+        )["docs"],
+    )
+    public = {}
+    for doc in docs:
+        metadata = doc.get("_source", {})
+        name = metadata.get("name", "").strip()
+        if (
+            name
+            and doc["_id"] != LEGACY_SEED_CONFERENCE_ID
+            and name.casefold() != SEED_CONFERENCE_NAME
+            and metadata.get("schedule_status", "ready") == "ready"
+        ):
+            public[doc["_id"]] = name
+    return [
+        {
+            "id": bucket["key"],
+            "name": public[bucket["key"]],
+            "talk_count": bucket["doc_count"],
+            "first_start": bucket["first_start"].get("value_as_string"),
+            "last_end": bucket["last_end"].get("value_as_string"),
+        }
+        for bucket in buckets
+        if bucket["key"] in public
+    ]
+
+
+async def archived_catalog_events() -> list[dict[str, Any]]:
+    buckets = await es_call(
+        "catalog_archived_events",
+        lambda: es.search(
+            index="talks-archive",
+            size=0,
+            aggs={
+                "events": {
+                    "terms": {"field": "conference_id", "size": 100, "order": {"year": "desc"}},
+                    "aggs": {
+                        "year": {"max": {"field": "year"}},
+                        "metadata": {"top_hits": {"size": 1, "_source": ["conference", "year"]}},
+                    },
+                }
+            },
+        )["aggregations"]["events"]["buckets"],
+    )
+    return [
+        {
+            "id": bucket["key"],
+            "name": metadata["conference"],
+            "year": metadata.get("year"),
+            "talk_count": bucket["doc_count"],
+        }
+        for bucket in buckets
+        if (metadata := bucket["metadata"]["hits"]["hits"][0]["_source"]).get("conference")
+    ]
+
+
+@app.get("/catalog/events")
+async def list_catalog_events(source: CatalogSource = "published") -> dict[str, Any]:
+    events = await (
+        published_catalog_events() if source == "published" else archived_catalog_events()
+    )
+    return {"events": events}
+
+
+def catalog_search_options(payload: CatalogSearch, filters: list[dict[str, Any]]) -> dict[str, Any]:
+    archived = payload.source == "archive"
+    fields = (
+        ["title^4", "abstract", "speakers_text^2", "tracks", "conference"]
+        if archived
+        else ["title^4", "abstract", "speakers^2", "track", "room"]
+    )
+    options: dict[str, Any] = {
+        "from_": payload.offset,
+        "size": CATALOG_PAGE_SIZE + 1,
+        "source": ARCHIVE_TALK_SOURCE if archived else PUBLISHED_TALK_SOURCE,
+    }
+    query = payload.query.strip()
+    if query:
+        options["retriever"] = {
+            "rrf": {
+                "rank_window_size": CATALOG_LAST_SEARCH_OFFSET + CATALOG_PAGE_SIZE + 1,
+                "retrievers": [
+                    {"standard": {"query": {"bool": {"must": [match], "filter": filters}}}}
+                    for match in [
+                        {"multi_match": {"query": query, "fields": fields}},
+                        {"semantic": {"field": "semantic_content", "query": query}},
+                    ]
+                ],
+            }
+        }
+    else:
+        options["query"] = {"bool": {"filter": filters}}
+        options["sort"] = ["year:desc", "id:asc"] if archived else ["start_time:asc", "talk_id:asc"]
+    return options
+
+
+@app.post("/catalog/talks/search")
+async def search_catalog_talks(payload: CatalogSearch) -> dict[str, Any]:
+    last_offset = CATALOG_LAST_SEARCH_OFFSET if payload.query.strip() else CATALOG_LAST_OFFSET
+    if payload.offset > last_offset:
+        return {"talks": [], "next_offset": None}
+    archived = payload.source == "archive"
+    names: dict[str, str] = {}
+    filters: list[dict[str, Any]] = []
+    if not archived:
+        events = await published_catalog_events()
+        names = {event["id"]: event["name"] for event in events}
+        allowed = [
+            event_id for event_id in names if not payload.event_id or event_id == payload.event_id
+        ]
+        if not allowed:
+            return {"talks": [], "next_offset": None}
+        filters = [{"term": {"confirmed": True}}, {"terms": {"conference_id": allowed}}]
+    elif payload.event_id:
+        filters = [{"term": {"conference_id": payload.event_id}}]
+    index = "talks-archive" if archived else "talks"
+    options = catalog_search_options(payload, filters)
+    hits = await es_call(
+        "catalog_talk_search",
+        lambda: es.search(index=index, **options)["hits"]["hits"],
+        redact_error=True,
+        **{"db.elasticsearch.index": index},
+    )
+    talks = []
+    for hit in hits[:CATALOG_PAGE_SIZE]:
+        doc = hit["_source"]
+        talks.append(
+            {
+                "id": hit["_id"],
+                "title": doc["title"],
+                "conference": doc.get("conference")
+                if archived
+                else names.get(doc.get("conference_id")),
+                "event_id": None if archived else doc.get("conference_id"),
+                "abstract": doc.get("abstract"),
+                "speakers": doc.get("speakers") or [],
+                "tracks": doc.get("tracks" if archived else "track") or [],
+                "room": doc.get("room"),
+                "start": doc.get("start" if archived else "start_time"),
+                "year": doc.get("year"),
+                "url": doc.get("url"),
+                "video_url": doc.get("video_url"),
+            }
+        )
+    return {
+        "talks": talks,
+        "next_offset": (
+            payload.offset + CATALOG_PAGE_SIZE
+            if len(hits) > CATALOG_PAGE_SIZE and payload.offset + CATALOG_PAGE_SIZE <= last_offset
+            else None
+        ),
+    }
+
+
 @app.post("/conferences", status_code=201)
 async def create_conference(payload: CreateConference) -> dict[str, str]:
     """Start an organizer session and return its one-time-visible management token."""
@@ -746,6 +971,11 @@ async def join_conference(conference_id: str) -> dict[str, Any]:
             source_includes=["name", *SCHEDULE_STATUS_FIELDS],
         )["_source"],
     )
+    if (
+        conference_id == LEGACY_SEED_CONFERENCE_ID
+        or conference["name"].strip().casefold() == SEED_CONFERENCE_NAME
+    ):
+        raise HTTPException(404, "Conference not found")
     hits = await es_call(
         "read_join_conference",
         lambda: es.search(

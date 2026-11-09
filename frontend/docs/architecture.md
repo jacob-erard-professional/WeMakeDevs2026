@@ -1,8 +1,10 @@
 # Frontend architecture
 
-`App.tsx` owns public navigation and the active attendee session. `src/api.ts` maps live FastAPI calls to frontend data. `src/conference.ts` holds the shared models and local recommendation logic, and `src/demoConference.ts` contains synthetic talks and attendees. Screens share controls from `src/ui.tsx`.
+`App.tsx` owns public navigation and the active attendee session. `src/api.ts` maps FastAPI calls to frontend data. `src/conference.ts` holds shared models and the schedule fallback. Screens share controls from `src/ui.tsx`.
 
-Local talk suggestions prioritize interest matches and exclude unavailable times. Switching conferences clears the active profile, token, and connection state. The sample conference simulates new arrivals on refresh. The live schedule can be browsed before completing a profile. Similar past talks use the signed-in attendee's conference token.
+FastAPI ranks talks and people for the attendee's conference. **My conferences** restores saved check-ins per event. The published schedule can be browsed before completing a profile. Similar past talks, people refresh, and connection requests use the signed-in attendee's conference token.
+
+The public catalog separates confirmed schedules in `talks` from historical talks in the read-only `talks-archive` alias. The frontend requests result pages as needed and displays loading, empty, and retry states.
 
 The profile flow keeps one draft while moving between About you and Availability. `src/Flow.tsx` provides short content transitions and disables them when the device or browser requests reduced motion.
 

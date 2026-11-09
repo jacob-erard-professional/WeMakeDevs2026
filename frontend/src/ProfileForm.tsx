@@ -6,7 +6,6 @@ import { parseResume } from './api';
 import { AvailabilityTimeline } from './AvailabilityTimeline';
 import { formatTime, parseTime, talkDay } from './conference';
 import type { Attendee, Conference, TimeRange } from './conference';
-import { sampleAttendee } from './demoConference';
 import { Flow } from './Flow';
 import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
 
@@ -66,7 +65,7 @@ export function ProfileForm({ initial, conference, previousResume, step, onSave,
         const { uri, name, mimeType, file } = result.assets[0];
         const resume = { uri, name, mimeType, file };
         update({ resume });
-        if (!conference.sample) void prefillFromResume(resume);
+        void prefillFromResume(resume);
       }
     } catch {
       setError('Could not open the file picker. Try again or continue with a bio.');
@@ -175,7 +174,7 @@ export function ProfileForm({ initial, conference, previousResume, step, onSave,
     }
     const linkedin = profile.linkedin.trim();
     if (linkedin && !/^https:\/\/(?:[a-z0-9-]+\.)?linkedin\.com\/in\/[a-z0-9_%.-]+\/?$/i.test(linkedin)) {
-      setError('Enter a LinkedIn profile URL such as https://www.linkedin.com/in/sample or leave it blank.');
+      setError('Enter a valid LinkedIn profile URL or leave it blank.');
       return;
     }
     update({ name: profile.name.trim(), email, linkedin });
@@ -213,10 +212,6 @@ export function ProfileForm({ initial, conference, previousResume, step, onSave,
       {step === 'about' ? <Section>
         <Label>Step 1 of 2 · About you</Label>
         <Heading large>Tell us about yourself</Heading>
-        {conference.sample ? (
-          <Action title="Use sample profile" onPress={() => { update({ ...sampleAttendee, unavailable: profile.unavailable }); setError(''); }} secondary />
-        ) : null}
-        <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
         <Copy>Start with your résumé or LinkedIn PDF (Profile → More → Save to PDF) and we’ll fill in what we can. It is sent once when you save; the server keeps only its extracted text, never the file.</Copy>
         {previousResume && !profile.resume ? (
           <Message>

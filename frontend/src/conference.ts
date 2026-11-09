@@ -10,7 +10,7 @@ export type Talk = TimeRange & {
   endsAt?: string;
 };
 
-export type Conference = { name: string; code: string; talks: Talk[]; sample?: true };
+export type Conference = { name: string; code: string; talks: Talk[] };
 
 // A picked résumé. expo-document-picker gives a `file` on web and a `uri` on native; the
 // document itself is only ever sent to /save-user-data, which extracts text and discards it.
@@ -66,29 +66,4 @@ export function parseSchedule(text: string) {
     talks.push({ id: String(index), title, track, room, start, end });
   });
   return { talks, warnings };
-}
-
-function overlaps(a: TimeRange, b: TimeRange) {
-  return a.start < b.end && b.start < a.end;
-}
-
-export function matchingTopics(profile: Attendee, topics: string[]) {
-  const interests = profile.interests.toLowerCase().split(',').map((value) => value.trim());
-  const bio = profile.bio.toLowerCase();
-  return topics.filter((topic) => interests.includes(topic.toLowerCase()) || bio.includes(topic.toLowerCase()));
-}
-
-export function recommendTalks(talks: Talk[], profile: Attendee) {
-  return talks
-    .filter((talk) => !profile.unavailable.some((range) => (!range.date || range.date === talkDay(talk.startsAt)) && overlaps(talk, range)))
-    .map((talk) => ({ ...talk, matched: matchingTopics(profile, [talk.track]).length > 0 }))
-    .sort((a, b) => Number(b.matched) - Number(a.matched) || a.start - b.start);
-}
-
-export function buildSchedule(talks: ReturnType<typeof recommendTalks>) {
-  const schedule: typeof talks = [];
-  for (const talk of talks) {
-    if (!schedule.some((scheduled) => overlaps(scheduled, talk))) schedule.push(talk);
-  }
-  return schedule.sort((a, b) => a.start - b.start);
 }

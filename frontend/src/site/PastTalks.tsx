@@ -1,63 +1,41 @@
-// Past talks across all sample events with a text filter and a track filter.
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 
-import { Action, Field, Heading, Message, styles } from '../ui';
-import { SampleBadge, TalkCard, page } from './PastEvents';
-import type { PastTalk } from './sampleEvents';
-import { eventName, loadPastTalks } from './sampleEvents';
+import type { CatalogSource } from '../api';
+import { Action, Field, Heading, styles } from '../ui';
+import { CatalogTalks } from './CatalogTalks';
 import { Container } from './SiteShell';
 
-function Chip({ title, selected, onPress }: { title: string; selected: boolean; onPress: () => void }) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <Pressable accessibilityRole="button" aria-pressed={selected} onPress={onPress}
-      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-      style={[page.chip, selected && page.chipSelected, focused && page.focused]}>
-      <Text style={[page.chipText, selected && page.chipTextSelected]}>{title}</Text>
-    </Pressable>
-  );
-}
-
-export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }) {
-  const [talks, setTalks] = useState<PastTalk[]>();
-  const [failed, setFailed] = useState(false);
+export function PastTalks({ onBrowseSchedule, onConference }: {
+  onBrowseSchedule: () => void;
+  onConference: (id: string) => void;
+}) {
+  const [text, setText] = useState('');
   const [query, setQuery] = useState('');
-  const [track, setTrack] = useState<string>();
+  const [source, setSource] = useState<CatalogSource>('published');
 
-  useEffect(() => {
-    let active = true;
-    loadPastTalks().then((items) => { if (active) setTalks(items); }).catch(() => { if (active) setFailed(true); });
-    return () => { active = false; };
-  }, []);
-
-  const tracks = useMemo(() => Array.from(new Set((talks ?? []).map((talk) => talk.track))).sort(), [talks]);
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return (talks ?? []).filter((talk) => (!track || talk.track === track) && (!needle
-      || [talk.title, talk.abstract, ...talk.speakers, eventName(talk.eventId)].some((text) => text.toLowerCase().includes(needle))));
-  }, [talks, query, track]);
+  function search() {
+    setQuery(text.trim());
+  }
 
   return (
     <Container style={page.block}>
       <Heading large>Search Talks</Heading>
-      <Field label="Search talks, speakers, or events" value={query} onChangeText={setQuery} autoCorrect={false} />
-      {tracks.length ? (
-        <View accessibilityLabel="Filter by track" style={page.filters}>
-          <Chip title="All tracks" selected={!track} onPress={() => setTrack(undefined)} />
-          {tracks.map((item) => <Chip key={item} title={item} selected={track === item} onPress={() => setTrack(track === item ? undefined : item)} />)}
-        </View>
-      ) : null}
+      <Field label="Search talks, speakers, or topics" value={text} onChangeText={setText} maxLength={160}
+        autoCorrect={false} returnKeyType="search" onSubmitEditing={search} />
       <View style={styles.row}>
-        <SampleBadge />
+        <Action title="Search" onPress={search} />
         <Action title="Browse my event schedule" onPress={onBrowseSchedule} secondary />
       </View>
-      {failed ? <Message error>Couldn't load past talks. Try again in a moment.</Message> : null}
-      {!talks && !failed ? <Message>Loading talks…</Message> : null}
-      {talks ? <Message>{visible.length === 0 ? 'No talks match these filters.' : `${visible.length} of ${talks.length} talks`}</Message> : null}
-      <View style={page.list}>
-        {visible.map((talk) => <TalkCard key={talk.id} talk={talk} event={eventName(talk.eventId)} />)}
+      <View style={styles.row}>
+        <Action title="Conference schedules" selected={source === 'published'} onPress={() => setSource('published')} secondary />
+        <Action title="Historical talks" selected={source === 'archive'} onPress={() => setSource('archive')} secondary />
       </View>
+      <CatalogTalks key={`${source}:${query}`} source={source} query={query} onConference={onConference} />
     </Container>
   );
 }
+
+const page = StyleSheet.create({
+  block: { paddingVertical: 48, maxWidth: 920, gap: 20 },
+});

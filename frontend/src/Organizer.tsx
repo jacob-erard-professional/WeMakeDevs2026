@@ -7,7 +7,6 @@ import { venueMinutes } from './api';
 import type { OrganizerSession, ParsedTalk } from './api';
 import { ScheduleGrid } from './ScheduleGrid';
 import type { ResumeAsset } from './conference';
-import { sampleSchedule } from './demoConference';
 import { EntryPass } from './EntryPass';
 import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
@@ -47,22 +46,18 @@ function validLink(value: string) {
   }
 }
 
-export function Organizer({ onPublishSample, onTrySample }: {
-  onPublishSample: (name: string, talks: ParsedTalk[]) => string;
-  onTrySample: (code: string) => void;
-}) {
+export function Organizer() {
   // A refresh must not lock the organizer out of the conference they just created: live
   // sessions (token, event details, parsed draft, published flag) are restored from this
-  // browser's storage. Sample sessions stay in-app only.
+  // browser's storage.
   const [stored] = useState(organizerSession.load);
   const [name, setName] = useState('');
   const [date, setDate] = useState(stored?.date ?? '');
   const [venue, setVenue] = useState(stored?.venue ?? '');
   const [description, setDescription] = useState(stored?.description ?? '');
-  const [session, setSession] = useState<OrganizerSession | { name: string; sample: true } | undefined>(stored && {
+  const [session, setSession] = useState<OrganizerSession | undefined>(stored && {
     conferenceId: stored.conferenceId, organizerToken: stored.organizerToken, name: stored.name,
   });
-  const [sampleMode, setSampleMode] = useState(false);
   const [source, setSource] = useState<Source>('Schedule link');
   const [sourceUrl, setSourceUrl] = useState('');
   const [asset, setAsset] = useState<ResumeAsset>();
@@ -91,11 +86,6 @@ export function Organizer({ onPublishSample, onTrySample }: {
   function createConference() {
     if (!name.trim()) { setError('Enter a conference name first.'); return; }
     if (date && !validScheduleDate(date)) { setError('Enter the event date in YYYY-MM-DD format.'); return; }
-    if (sampleMode) {
-      setError('');
-      setSession({ name: name.trim(), sample: true });
-      return;
-    }
     void run(async () => {
       const created = await createLiveConference(name.trim());
       setSession(created);
@@ -132,7 +122,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
     if (!session) return;
     setError('');
     setEditingTalk(undefined);
-    if ('sample' in session || source === 'Paste text') {
+    if (source === 'Paste text') {
       setDraft(parsePastedSchedule(text, date));
       return;
     }
@@ -155,10 +145,6 @@ export function Organizer({ onPublishSample, onTrySample }: {
 
   function publish() {
     if (!session || !draft?.talks.length) return;
-    if ('sample' in session) {
-      setPublishedCode(onPublishSample(session.name, draft.talks));
-      return;
-    }
     void run(async () => {
       await confirmLiveSchedule(session, draft.talks);
       setPublishedCode(session.conferenceId);
@@ -170,14 +156,13 @@ export function Organizer({ onPublishSample, onTrySample }: {
   function backToDashboard() {
     setPublishedCode(undefined);
     setError('');
-    if (session && !('sample' in session)) persist(session, { published: false });
+    if (session) persist(session, { published: false });
   }
 
   // Also "Start a new conference": forgets this browser's organizer session.
   function reset() {
     organizerSession.clear();
     setPublishedCode(undefined);
-    setSampleMode(false);
     setSession(undefined);
     setDraft(undefined);
     setEditingTalk(undefined);
@@ -192,24 +177,12 @@ export function Organizer({ onPublishSample, onTrySample }: {
     setError('');
   }
 
-  function loadSample() {
-    setSampleMode(true);
-    setName('Sample Cloud Native Conference');
-    setDate('2026-11-09');
-    setVenue('Summit Conference Center');
-    setDescription('A day of talks for people who build and operate software platforms.');
-    setSource('Paste text');
-    setText(sampleSchedule);
-    setError('');
-  }
-
   if (publishedCode && session) {
     return (
       <Flow step="published">
         <EntryPass name={session.name} code={publishedCode} link={joinUrl(publishedCode)}
           details={[date, venue].filter(Boolean).join(' · ')} onReset={reset}
-          onBack={backToDashboard}
-          onTrySample={'sample' in session ? () => onTrySample(publishedCode) : undefined} />
+          onBack={backToDashboard} />
       </Flow>
     );
   }
@@ -223,10 +196,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
       <OrganizerIntro />
       <Label>{session ? 'Step 2 of 2 · Schedule' : 'Step 1 of 2 · Event details'}</Label>
       <Heading large>{session ? 'Add your sessions' : 'Create a conference'}</Heading>
-      {sampleMode ? <Message>Sample mode. This conference stays in this app session.</Message> : null}
       {!session ? <Section>
-        <Action title={sampleMode ? 'Switch to live setup' : 'Try sample organizer flow'} disabled={busy}
-          onPress={sampleMode ? reset : loadSample} secondary />
         <Field label="Conference name" value={name} onChangeText={setName} maxLength={160} editable={!busy} />
         <Field label="Event date (optional)" placeholder="YYYY-MM-DD" value={date} onChangeText={setDate} maxLength={10} editable={!busy} />
         <Field label="Venue or location (optional)" value={venue} onChangeText={setVenue} maxLength={160} editable={!busy} />
@@ -235,10 +205,10 @@ export function Organizer({ onPublishSample, onTrySample }: {
         <Action title={busy ? 'Creating conference…' : 'Continue to schedule'} onPress={createConference} disabled={busy} />
       </Section> : <Section>
         <Copy>Import a schedule for {session.name}. Review the sessions before sharing the event.</Copy>
-        {sampleMode ? null : <View style={styles.row}>
+        <View style={styles.row}>
           {sources.map((item) => <Action key={item} title={item} selected={source === item} disabled={busy}
             onPress={() => { setSource(item); setDraft(undefined); setEditingTalk(undefined); setError(''); }} secondary />)}
-        </View>}
+        </View>
         {source === 'Schedule link' ? (
           <Field label="Public schedule URL" value={sourceUrl} autoCapitalize="none" keyboardType="url"
             placeholder="https://…" maxLength={2000} editable={!busy}
@@ -259,7 +229,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
           </>
         )}
         <Action title={busy ? 'Working…' : 'Preview schedule'} onPress={reviewSchedule} disabled={busy || !canReview} />
-        {'sample' in session ? null : <Action title="Start a new conference" onPress={reset} disabled={busy} secondary />}
+        <Action title="Start a new conference" onPress={reset} disabled={busy} secondary />
       </Section>}
       {draft ? <Section>
         <Heading>Review schedule</Heading>

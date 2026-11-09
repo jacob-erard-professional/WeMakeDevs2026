@@ -23,7 +23,7 @@ export function MyConferences({ conferences, navigate, onForget }: {
       {!conferences.length ? <Message>No conferences here yet. Join with an event code or an organizer’s link.</Message> : null}
       {conferences.map((conference) => (
         <View key={conference.code} style={list.event}>
-          <Label>{conference.checkedIn ? 'Checked in' : 'Check-in started'}{conference.sample ? ' · Sample' : ''}</Label>
+          <Label>{conference.checkedIn ? 'Checked in' : 'Check-in started'}</Label>
           <Heading>{conference.name}</Heading>
           <View style={styles.row}>
             <Action title={conference.checkedIn ? 'Open my plan' : 'Continue check-in'}

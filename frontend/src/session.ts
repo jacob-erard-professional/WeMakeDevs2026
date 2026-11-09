@@ -38,7 +38,6 @@ export type RememberedConference = {
   checkedIn: boolean;
   hasDraft: boolean;
   draftStep?: 'about' | 'availability';
-  sample: boolean;
 };
 
 export type StoredOrganizerSession = OrganizerSession & {
@@ -143,13 +142,15 @@ const temporaryAttendees = new Map<string, AttendeeSession>();
 
 export const attendeeSessions = {
   load(conferenceId: string): AttendeeSession | undefined {
-    return temporaryAttendees.get(conferenceId) ?? read(attendeeKey(conferenceId), isAttendeeSession);
+    const session = temporaryAttendees.get(conferenceId) ?? read(attendeeKey(conferenceId), isAttendeeSession);
+    // Ignore legacy demo entries without changing other saved conferences.
+    return session?.sample || conferenceId === 'cloud-native' || conferenceId === 'cnh-slc-2026' || conferenceId.startsWith('sample-')
+      || session?.conferenceName?.trim().toLowerCase() === 'cloud native hackathon slc 2026' ? undefined : session;
   },
   update(conferenceId: string, changes: Partial<AttendeeSession>): void {
     const current = attendeeSessions.load(conferenceId) ?? {};
     const next = { ...current, ...changes };
-    // Organizer-created sample schedules only exist in the running app.
-    if ((next.sample && conferenceId.startsWith('sample-')) || !write(attendeeKey(conferenceId), next)) {
+    if (!write(attendeeKey(conferenceId), next)) {
       temporaryAttendees.set(conferenceId, next);
     } else {
       temporaryAttendees.delete(conferenceId);
@@ -180,7 +181,6 @@ export const attendeeSessions = {
         checkedIn: !!session.saved,
         hasDraft: !!session.draft,
         draftStep: session.draftStep,
-        sample: !!session.sample,
         lastOpenedAt: session.lastOpenedAt ?? 0,
       }];
     }).sort((a, b) => b.lastOpenedAt - a.lastOpenedAt || a.name.localeCompare(b.name));
