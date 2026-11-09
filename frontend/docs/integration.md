@@ -1,0 +1,24 @@
+# FastAPI integration
+
+Use this table to discuss UI needs. The paths come from the initial frontend brief. The [backend draft](../../backend/docs/README.md) uses different routes for some operations. Reconcile both with the implemented FastAPI OpenAPI schema before adding an HTTP adapter.
+
+| UI operation | Initial endpoint sketch |
+| --- | --- |
+| Import schedule and preview warnings | `POST /conferences/import` |
+| Confirm edited talks and receive join link | `POST /conferences/import/{id}/confirm` |
+| Edit a published talk | `PATCH /conferences/{id}/talks/{talk_id}` |
+| Read organizer insights | `GET /conferences/{id}/insights` |
+| Resolve a conference join link | `GET /conferences/{slug}` |
+| Save attendee profile | `POST /conferences/{id}/profiles` |
+| Get recommended talks | `GET /conferences/{id}/talks/recommend?profile_id=…` |
+| Get the proposed schedule | `GET /conferences/{id}/schedules?profile_id=…` |
+| Refresh recommended people | `GET /conferences/{id}/people/recommend?profile_id=…` |
+| Request a connection | `POST /conferences/{id}/connections` |
+
+## Confirm before wiring
+
+- **Identity and authorization.** Confirm how a slug resolves to an ID, how attendee sessions prove ownership of a profile, and how organizer access is granted without bundling an admin key. Confirm whether join links carry a secret.
+- **Inputs and errors.** Confirm supported import and resume formats, size limits, multipart fields, LinkedIn validation, unavailable time ranges, validation error shapes, and which writes support idempotency.
+- **Recommendations.** Confirm talk and person IDs, safe explanation fields, empty results, refresh semantics, and schedule overlap and timezone rules.
+- **Privacy and connections.** Confirm discovery opt-in, the precise meaning and audience of public resume visibility, connection request and acceptance states, and who can read each field at each stage. A profile ID by itself grants no access.
+- **Transport.** Confirm the development API URL, web CORS, native reachability, authentication transport, and telemetry propagation. Map response shapes at the data boundary and use timeouts and actionable errors.
