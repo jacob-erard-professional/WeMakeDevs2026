@@ -40,9 +40,10 @@ export function joinCodeFromLocation(): string | undefined {
   return parseJoinCode(window.location.pathname) ?? undefined;
 }
 
-// Web only: drop /join/<code> from the address bar after a successful join so a remount of the
-// join screen (e.g. "Switch conference") does not re-join. replaceState adds no history entry.
+// Web only: drop the code from /join/<code> after a successful join so a remount of the join
+// screen (e.g. "Switch conference") or a reload does not re-join. Stays on /join so the site
+// router keeps showing the attendee flow. replaceState adds no history entry.
 export function clearJoinPath(): void {
   if (Platform.OS !== 'web' || typeof window === 'undefined' || !JOIN_PATH.test(window.location.pathname)) return;
-  window.history.replaceState(null, '', '/');
+  window.history.replaceState(null, '', '/join');
 }
