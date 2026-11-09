@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import { API_BASE_URL as apiBase } from './apiBase';
 import type { Attendee, Conference, ResumeAsset, Talk } from './conference';
+import { venueTimestamp } from './scheduleText';
 
 type JoinResponse = {
   conference_id: string;
@@ -103,6 +104,17 @@ export async function loadRelatedTalks(conferenceId: string, talkId: string, tok
   return result.talks;
 }
 
+export async function searchSuggestedPeople(conferenceId: string, token: string, note: string, signal: AbortSignal) {
+  const response = await request(`${apiBase}/conferences/${encodeURIComponent(conferenceId)}/people/recommend`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note }),
+    signal,
+  });
+  if (!response.ok) throw await apiError(response, 'Could not update people suggestions.');
+  return response.json() as Promise<LiveRecommendations['attendees']>;
+}
+
 async function resumePart(resume: ResumeAsset): Promise<Blob | { uri: string; name: string; type: string }> {
   const type = resume.mimeType || 'application/pdf';
   if (Platform.OS !== 'web') return { uri: resume.uri, name: resume.name, type };
@@ -115,6 +127,14 @@ export async function saveLiveProfile(
   profile: Attendee,
   attendeeToken?: string,
 ) {
+  const blockouts = profile.unavailable.map(({ date, start, end }) => {
+    const start_time = date && venueTimestamp(date, start);
+    const end_time = date && venueTimestamp(date, end);
+    if (!start_time || !end_time || end_time <= start_time) {
+      throw new Error('An unavailable time could not be placed on the conference schedule. Check the selected day and time.');
+    }
+    return { start_time, end_time };
+  });
   const payload = {
     conference_id: conference.code,
     name: profile.name,
@@ -124,9 +144,7 @@ export async function saveLiveProfile(
     looking_for: profile.lookingFor.trim(),
     linkedin_url: profile.linkedin || undefined,
     discovery_opt_in: profile.discoverable,
-    // Time ranges are currently entered as clock times without a date/time zone. They remain
-    // local until the UI collects timezone-aware timestamps for the API.
-    blockout_times: [],
+    blockout_times: blockouts,
   };
   // /save-user-data takes multipart with a JSON `profile` field plus an optional `resume` file.
   // Let fetch set Content-Type so the multipart boundary is included.

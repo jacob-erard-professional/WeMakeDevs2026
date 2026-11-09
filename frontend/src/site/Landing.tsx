@@ -21,7 +21,10 @@ function RoleChoice({ title, description, onPress }: { title: string; descriptio
   );
 }
 
-export function Landing({ navigate }: { navigate: (path: string) => void }) {
+export function Landing({ navigate, resumeConference }: {
+  navigate: (path: string) => void;
+  resumeConference?: { name: string; code: string };
+}) {
   return (
     <Container style={home.content}>
       <View style={home.intro}>
@@ -36,6 +39,10 @@ export function Landing({ navigate }: { navigate: (path: string) => void }) {
           onPress={() => navigate(paths.organizers)} />
       </View>
       <View style={home.discovery}>
+        {resumeConference ? (
+          <View><Action title={`Return to ${resumeConference.name}`}
+            onPress={() => navigate(`${paths.join}/${encodeURIComponent(resumeConference.code)}`)} secondary /></View>
+        ) : null}
         <View><Action title="Search Talks" onPress={() => navigate(paths.talks)} /></View>
         <View><Action title="Browse the event archive" onPress={() => navigate(paths.events)} secondary /></View>
       </View>

@@ -1,9 +1,10 @@
 import { getDocumentAsync } from 'expo-document-picker';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { View } from 'react-native';
 
-import { formatTime, parseTime } from './conference';
-import type { Attendee } from './conference';
+import { AvailabilityTimeline } from './AvailabilityTimeline';
+import { formatTime, parseTime, talkDay } from './conference';
+import type { Attendee, Conference, TimeRange } from './conference';
 import { sampleAttendee } from './demoConference';
 import { Flow } from './Flow';
 import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
@@ -13,21 +14,34 @@ const blank: Attendee = {
   resumePublic: false, discoverable: false, unavailable: [],
 };
 
-export function ProfileForm({ initial, onSave, onStepChange, sample }: {
+export function ProfileForm({ initial, conference, onSave, onStepChange, onDraftChange, onCancel }: {
   initial?: Attendee;
+  conference: Conference;
   onSave: (profile: Attendee) => Promise<void>;
   onStepChange: () => void;
-  sample?: boolean;
+  onDraftChange: (profile: Attendee) => void;
+  onCancel?: () => void;
 }) {
   const [profile, setProfile] = useState(initial ?? blank);
+  const currentProfile = useRef(profile);
+  const saveInProgress = useRef(false);
   const [step, setStep] = useState<'about' | 'availability'>('about');
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<'available' | 'unavailable'>('unavailable');
+  const days = [...new Set(conference.talks.flatMap((talk) => talkDay(talk.startsAt) ?? []))].sort();
+  const [day, setDay] = useState(days[0]);
+  const dayTalks = conference.talks.filter((talk) => !day || talkDay(talk.startsAt) === day);
+  const timelineStart = Math.floor(Math.min(8 * 60, ...dayTalks.map((talk) => talk.start)) / 15) * 15;
+  const timelineEnd = Math.ceil(Math.max(18 * 60, ...dayTalks.map((talk) => talk.end)) / 15) * 15;
 
   function update(changes: Partial<Attendee>) {
-    setProfile((current) => ({ ...current, ...changes }));
+    const next = { ...currentProfile.current, ...changes };
+    currentProfile.current = next;
+    setProfile(next);
+    onDraftChange(next);
   }
 
   async function pickResume() {
@@ -47,17 +61,42 @@ export function ProfileForm({ initial, onSave, onStepChange, sample }: {
 
   function addBlock() {
     const from = parseTime(start);
-    const to = parseTime(end);
+    const to = end.trim() === '24:00' ? 1440 : parseTime(end);
     if (from === null || to === null || from >= to) {
       setError('Enter a start and a later end in 24-hour HH:MM format.');
       return;
     }
-    if (!profile.unavailable.some((range) => range.start === from && range.end === to)) {
-      update({ unavailable: [...profile.unavailable, { start: from, end: to }] });
-    }
+    if (!markRange({ start: from, end: to })) return;
     setStart('');
     setEnd('');
     setError('');
+  }
+
+  function markRange({ start: from, end: to }: TimeRange) {
+    const otherDays = profile.unavailable.filter((range) => range.date !== day);
+    const ranges = profile.unavailable.filter((range) => range.date === day);
+    const selection = { date: day, start: from, end: to };
+    const updated = mode === 'available'
+      ? ranges.flatMap((range) => {
+          if (range.end <= from || range.start >= to) return [range];
+          return [
+            ...(range.start < from ? [{ ...range, end: from }] : []),
+            ...(range.end > to ? [{ ...range, start: to }] : []),
+          ];
+        })
+      : [...ranges, selection].sort((a, b) => a.start - b.start).reduce<TimeRange[]>((merged, range) => {
+          const last = merged.at(-1);
+          if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+          else merged.push({ ...range });
+          return merged;
+        }, []);
+    if (otherDays.length + updated.length > 100) {
+      setError('Remove an unavailable time before adding another.');
+      return false;
+    }
+    update({ unavailable: [...otherDays, ...updated] });
+    setError('');
+    return true;
   }
 
   function changeStep(next: typeof step) {
@@ -86,10 +125,12 @@ export function ProfileForm({ initial, onSave, onStepChange, sample }: {
   }
 
   async function save() {
+    if (saveInProgress.current) return;
     if (start.trim() || end.trim()) {
       setError('Add the pending time block or clear both time fields before continuing.');
       return;
     }
+    saveInProgress.current = true;
     setSaving(true);
     setError('');
     try {
@@ -97,6 +138,7 @@ export function ProfileForm({ initial, onSave, onStepChange, sample }: {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not save your profile.');
     } finally {
+      saveInProgress.current = false;
       setSaving(false);
     }
   }
@@ -106,8 +148,8 @@ export function ProfileForm({ initial, onSave, onStepChange, sample }: {
       {step === 'about' ? <Section>
         <Label>Step 1 of 2 · About you</Label>
         <Heading large>Tell us about yourself</Heading>
-        {sample ? (
-          <Action title="Use sample profile" onPress={() => { setProfile(sampleAttendee); setError(''); }} secondary />
+        {conference.sample ? (
+          <Action title="Use sample profile" onPress={() => { update({ ...sampleAttendee, unavailable: profile.unavailable }); setError(''); }} secondary />
         ) : null}
         <Copy>Use sample information for this demo. Your interests help tailor your recommendations.</Copy>
         <Field label="Name (required)" value={profile.name} onChangeText={(name) => update({ name })} maxLength={80} />
@@ -133,31 +175,46 @@ export function ProfileForm({ initial, onSave, onStepChange, sample }: {
         ) : null}
         <Action title={profile.discoverable ? 'Discovery on' : 'Discovery off'} selected={profile.discoverable}
           onPress={() => update({ discoverable: !profile.discoverable })} secondary />
-        <Copy>Discovery controls whether your profile may appear in other attendees’ suggestions. You can browse suggestions either way.</Copy>
+        <Copy>Turn on discovery to appear in and receive people suggestions for this conference.</Copy>
         {error ? <Message error>{error}</Message> : null}
         <Action title="Continue to availability" onPress={continueToAvailability} />
       </Section> : <Section>
         <Label>Step 2 of 2 · Availability</Label>
         <Heading large>Make time for what matters</Heading>
-        <Copy>Block out any times you’re busy, or continue if you’re free all day. Use Mountain Time in 24-hour HH:MM format.</Copy>
-        <Field label="Unavailable from" value={start} onChangeText={setStart} placeholder="11:00" maxLength={5} />
-        <Field label="Unavailable until" value={end} onChangeText={setEnd} placeholder="12:00" maxLength={5} />
-        <Action title="Add unavailable time" onPress={addBlock} secondary />
+        <Copy>Block out times you’re busy, or continue if you’re free all day. Times are in Mountain Time.</Copy>
+        {days.length > 1 ? (
+          <View style={styles.row}>
+            {days.map((date) => <Action key={date} title={date} selected={date === day} disabled={saving}
+              onPress={() => setDay(date)} secondary />)}
+          </View>
+        ) : day ? <Label>{day}</Label> : null}
+        <View style={styles.row}>
+          <Action title="Mark unavailable" selected={mode === 'unavailable'} disabled={saving}
+            onPress={() => setMode('unavailable')} secondary />
+          <Action title="Mark available" selected={mode === 'available'} disabled={saving}
+            onPress={() => setMode('available')} secondary />
+        </View>
+        <AvailabilityTimeline start={timelineStart} end={timelineEnd} disabled={saving}
+          blocked={profile.unavailable.filter((range) => range.date === day)} mode={mode} onSelect={markRange} />
+        <Field label={mode === 'available' ? 'Available from' : 'Unavailable from'} value={start} onChangeText={setStart} placeholder="11:00" maxLength={5} editable={!saving} />
+        <Field label={mode === 'available' ? 'Available until' : 'Unavailable until'} value={end} onChangeText={setEnd} placeholder="12:00" maxLength={5} editable={!saving} />
+        <Action title={mode === 'available' ? 'Clear unavailable time' : 'Add unavailable time'} onPress={addBlock} disabled={saving} secondary />
         {profile.unavailable.map((range) => {
-          const time = `${formatTime(range.start)} to ${formatTime(range.end)}`;
+          const time = `${days.length > 1 && range.date ? `${range.date} · ` : ''}${formatTime(range.start)} to ${formatTime(range.end)}`;
           return (
-            <View key={`${range.start}-${range.end}`} style={styles.row}>
+            <View key={`${range.date}-${range.start}-${range.end}`} style={styles.row}>
               <Copy>{time}</Copy>
-              <Action title={`Remove ${time}`} onPress={() => update({ unavailable: profile.unavailable.filter((item) => item !== range) })} secondary />
+              <Action title={`Remove ${time}`} onPress={() => update({ unavailable: profile.unavailable.filter((item) => item !== range) })} disabled={saving} secondary />
             </View>
           );
         })}
         {error ? <Message error>{error}</Message> : null}
         <View style={styles.row}>
           <Action title={saving ? 'Saving profile…' : 'See my recommendations'} onPress={save} disabled={saving} />
-          <Action title="Back to profile" onPress={() => changeStep('about')} secondary />
+          <Action title="Back to profile" onPress={() => changeStep('about')} disabled={saving} secondary />
         </View>
       </Section>}
+      {onCancel ? <Action title="Cancel edit and return to plan" onPress={onCancel} disabled={saving} secondary /> : null}
     </Flow>
   );
 }

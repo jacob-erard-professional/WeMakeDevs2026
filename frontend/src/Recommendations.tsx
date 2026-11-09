@@ -1,16 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { ApiPerson, ApiTalk, LiveRecommendations } from './api';
+import { searchSuggestedPeople } from './api';
 import { buildSchedule, formatTime, matchingTopics, recommendTalks } from './conference';
 import type { Attendee, Conference, Talk } from './conference';
 import { demoPeople } from './demoConference';
 import { Flow } from './Flow';
 import { ScheduleBrowser } from './ScheduleBrowser';
-import { Action, Copy, Heading, Label, Message, TalkDetails, styles } from './ui';
+import { ScheduleColumns } from './ScheduleColumns';
+import { Action, colors, Copy, Field, Heading, Label, Message, TalkDetails, styles } from './ui';
 
-const sections = ['My schedule', 'Event schedule', 'Talks', 'People'] as const;
-type Section = typeof sections[number];
+const sections = ['My schedule', 'Event schedule', 'Talks', 'Suggested People'] as const;
+export type RecommendationSection = typeof sections[number];
 
 type RankedTalk = Talk & { matched: boolean; relevance?: number; rank?: number };
 
@@ -68,7 +70,7 @@ function matchLabel(talk: RankedTalk) {
   return `${Math.round(talk.relevance * 100)}% match`;
 }
 
-export function Recommendations({ conference, profile, attendeeToken, recommendations, requested, onRequest, onEdit }: {
+export function Recommendations({ conference, profile, attendeeToken, recommendations, requested, onRequest, onEdit, section, onSection }: {
   conference: Conference;
   profile: Attendee;
   attendeeToken?: string;
@@ -76,10 +78,49 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
   requested: string[];
   onRequest: (id: string) => void;
   onEdit: (talkId?: string) => void;
+  section: RecommendationSection;
+  onSection: (section: RecommendationSection) => void;
 }) {
-  const [section, setSection] = useState<Section>('My schedule');
   const [refreshed, setRefreshed] = useState(false);
+  const [note, setNote] = useState('');
+  const [appliedNote, setAppliedNote] = useState('');
+  const [peopleResults, setPeopleResults] = useState<LiveRecommendations['attendees']>();
+  const [peopleError, setPeopleError] = useState('');
+  const [searching, setSearching] = useState(false);
+  const peopleRequest = useRef<AbortController>(null);
   const live = !conference.sample;
+
+  useEffect(() => () => peopleRequest.current?.abort(), []);
+
+  async function updatePeople() {
+    if (peopleRequest.current || (live && (!attendeeToken || !profile.discoverable))) return;
+    const query = note.trim();
+    setPeopleError('');
+    if (!live) {
+      setAppliedNote(query);
+      setRefreshed(true);
+      return;
+    }
+    if (!attendeeToken) return;
+    const controller = new AbortController();
+    peopleRequest.current = controller;
+    setSearching(true);
+    try {
+      const results = await searchSuggestedPeople(conference.code, attendeeToken, query, controller.signal);
+      if (!controller.signal.aborted) {
+        setPeopleResults(results);
+        setAppliedNote(query);
+        setRefreshed(true);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setPeopleError(error instanceof Error ? error.message : 'Could not update people suggestions.');
+    } finally {
+      if (!controller.signal.aborted) {
+        peopleRequest.current = null;
+        setSearching(false);
+      }
+    }
+  }
 
   let talks: RankedTalk[];
   let schedule: RankedTalk[];
@@ -97,10 +138,14 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
 
   const samplePeople = conference.sample
     ? demoPeople.slice(0, refreshed ? demoPeople.length : 2)
-      .map((person) => ({ ...person, shared: matchingTopics(profile, person.topics) }))
-      .sort((a, b) => b.shared.length - a.shared.length)
+      .map((person) => ({
+        ...person,
+        shared: matchingTopics(profile, person.topics),
+        noteMatches: person.topics.filter((topic) => appliedNote.toLowerCase().includes(topic.toLowerCase())),
+      }))
+      .sort((a, b) => b.noteMatches.length - a.noteMatches.length || b.shared.length - a.shared.length)
     : [];
-  const people = live ? livePeople(recommendations?.attendees ?? { similar: [], matches: [] }) : [];
+  const people = live ? livePeople(peopleResults ?? recommendations?.attendees ?? { similar: [], matches: [] }) : [];
   const peopleCount = live ? people.length : samplePeople.length;
 
   const emptyTalks = live
@@ -115,17 +160,23 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
       <Heading large>Your conference plan</Heading>
       <Copy>Welcome, {profile.name}. Here’s what fits your day.</Copy>
       <View style={styles.row}>
-        {sections.map((item) => <Action key={item} title={item} selected={section === item} onPress={() => setSection(item)} secondary />)}
+        {sections.map((item) => <Action key={item} title={item} selected={section === item} onPress={() => onSection(item)} secondary />)}
         <Action title="Edit profile" onPress={() => onEdit()} secondary />
       </View>
       <Flow step={section} style={program.results}>
         {section === 'Event schedule' ? (
           <ScheduleBrowser conference={conference} attendeeToken={attendeeToken} onProfile={onEdit} />
-        ) : section === 'People' ? (
+        ) : section === 'Suggested People' ? (
           <>
-            <Heading>People to meet</Heading>
-            {!live ? <Action title="Refresh people" onPress={() => setRefreshed(true)} secondary /> : null}
-            {refreshed ? <Message>{peopleCount ? 'People suggestions updated.' : 'No people are available yet.'}</Message> : null}
+            <Heading>Suggested people to talk to</Heading>
+            <Copy>Add a note to refine these suggestions. It applies to this search and is separate from your profile.</Copy>
+            <Field label="Who would you like to meet? (optional)" value={note} onChangeText={setNote} multiline maxLength={500}
+              editable={!searching} placeholder="I’m looking for people involved in Kubernetes." />
+            <Action title={searching ? 'Finding people…' : 'Update suggestions'} onPress={() => void updatePeople()}
+              disabled={searching || (live && (!attendeeToken || !profile.discoverable))} />
+            {live && !profile.discoverable ? <Action title="Edit discovery settings" onPress={() => onEdit()} secondary /> : null}
+            {peopleError ? <Message error>{peopleError}</Message> : null}
+            {refreshed && !searching && !peopleError ? <Message>{peopleCount ? 'People suggestions updated.' : 'No people are available yet.'}</Message> : null}
             {!peopleCount ? <Copy>{emptyPeople}</Copy> : null}
             {live ? people.map((person) => (
               <View key={person.attendee_id} style={program.person}>
@@ -140,7 +191,10 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
               <View key={person.id} style={program.person}>
                 <Heading>{person.name}</Heading>
                 <Label>{person.role}</Label>
-                <Copy>{person.shared.length ? `Shared interests: ${person.shared.join(', ')}.` : `Meet another attendee interested in ${person.topics.join(' and ')}.`}</Copy>
+                <Copy>{person.noteMatches.length
+                  ? `Matches your search for ${person.noteMatches.join(', ')}.`
+                  : person.shared.length ? `Shared interests: ${person.shared.join(', ')}.`
+                    : `Meet another attendee interested in ${person.topics.join(' and ')}.`}</Copy>
                 <Copy>{person.opener}</Copy>
                 {requested.includes(person.id) ? <Message>Connection request pending</Message> : (
                   <Action title={`Request connection with ${person.name}`} onPress={() => onRequest(person.id)} />
@@ -155,25 +209,27 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
               ? 'A plan without overlapping talks. All times are Mountain Time.'
               : live ? 'Ranked by how well each talk matches your profile.' : 'Talks that fit your availability, with interest matches first.'}</Copy>
             {!shownTalks.length ? <Copy>{emptyTalks}</Copy> : null}
-            {shownTalks.map((talk) => {
-              const match = live ? matchLabel(talk) : null;
-              return (
-                <View key={talk.id} style={program.slot}>
-                  <View style={program.time}>
-                    <Label>{formatTime(talk.start)} to {formatTime(talk.end)}</Label>
-                    <Copy>{talk.room}</Copy>
+            <ScheduleColumns talks={section === 'My schedule' ? shownTalks : []}>
+              {shownTalks.map((talk) => {
+                const match = live ? matchLabel(talk) : null;
+                return (
+                  <View key={talk.id} style={program.slot}>
+                    <View style={program.time}>
+                      <Label>{formatTime(talk.start)} to {formatTime(talk.end)}</Label>
+                      <Copy>{talk.room}</Copy>
+                    </View>
+                    <View style={program.talk}>
+                      {match ? <Label>{match}</Label> : null}
+                      <Heading>{talk.title}</Heading>
+                      <Copy>{live
+                        ? `${talk.track}.`
+                        : talk.matched ? `Matches your interest in ${talk.track}.` : `Explore ${talk.track} during a time you’re available.`}</Copy>
+                      <TalkDetails title={talk.title} abstract={talk.abstract || 'No session description has been provided.'} />
+                    </View>
                   </View>
-                  <View style={program.talk}>
-                    {match ? <Label>{match}</Label> : null}
-                    <Heading>{talk.title}</Heading>
-                    <Copy>{live
-                      ? `${talk.track}.`
-                      : talk.matched ? `Matches your interest in ${talk.track}.` : `Explore ${talk.track} during a time you’re available.`}</Copy>
-                    {talk.abstract ? <TalkDetails title={talk.title} abstract={talk.abstract} /> : null}
-                  </View>
-                </View>
-              );
-            })}
+                );
+              })}
+            </ScheduleColumns>
           </>
         )}
       </Flow>
@@ -183,7 +239,7 @@ export function Recommendations({ conference, profile, attendeeToken, recommenda
 
 const program = StyleSheet.create({
   results: { gap: 12 },
-  slot: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 24, rowGap: 8, marginTop: 22 },
+  slot: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 24, rowGap: 8, borderTopWidth: 1, borderColor: colors.chrome, paddingTop: 14 },
   time: { flexBasis: 165 },
   talk: { flexBasis: 260, flexGrow: 1, flexShrink: 1, gap: 4 },
   person: { marginTop: 22, gap: 7 },

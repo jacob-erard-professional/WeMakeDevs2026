@@ -10,7 +10,7 @@ import { EntryPass } from './EntryPass';
 import { Flow } from './Flow';
 import { joinUrl } from './joinLink';
 import { parsePastedSchedule, validScheduleDate } from './scheduleText';
-import { Action, Copy, Field, Heading, Label, Message, Section, styles } from './ui';
+import { Action, Copy, Field, Heading, Label, Message, Section, TalkDetails, styles } from './ui';
 
 const sources = ['Schedule link', 'Image or PDF', 'Paste text'] as const;
 type Source = typeof sources[number];
@@ -236,6 +236,7 @@ export function Organizer({ onPublishSample, onTrySample }: {
           <View key={index} style={styles.stack}>
             <Heading>{talk.title || 'Untitled session'}</Heading>
             <Copy>{displayTime(talk.start_time)} to {displayTime(talk.end_time)} · {talk.room || 'Room TBA'}</Copy>
+            {editingTalk !== index && talk.abstract ? <TalkDetails title={talk.title} abstract={talk.abstract} /> : null}
             <Action title={editingTalk === index ? 'Done editing' : `Edit session ${index + 1}`}
               onPress={() => setEditingTalk(editingTalk === index ? undefined : index)} disabled={busy} secondary />
             {editingTalk === index ? (

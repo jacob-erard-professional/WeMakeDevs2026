@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Linking, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 
 import { loadRelatedTalks } from './api';
 import type { ArchiveTalk } from './api';
-import { formatTime } from './conference';
+import { formatTime, talkDay } from './conference';
 import type { Conference, Talk } from './conference';
 import { Flow } from './Flow';
-import { Action, Copy, Field, Heading, Label, Message, styles } from './ui';
+import { ScheduleColumns } from './ScheduleColumns';
+import { Action, colors, Copy, Field, Heading, Label, Message, TalkDetails, styles } from './ui';
 
 const venueDate = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', weekday: 'short', month: 'short', day: 'numeric' });
 
-function when(talk: Talk) {
+function dayLabel(talk: Talk) {
   const timestamp = Date.parse(talk.startsAt ?? '');
-  const date = Number.isNaN(timestamp) ? '' : `${venueDate.format(timestamp)} · `;
-  return `${date}${formatTime(talk.start)} to ${formatTime(talk.end)} · ${talk.room}`;
+  return Number.isNaN(timestamp) ? '' : venueDate.format(timestamp);
+}
+
+function when(talk: Talk) {
+  return `${formatTime(talk.start)} to ${formatTime(talk.end)} · ${talk.room}`;
 }
 
 function safeLink(value?: string) {
@@ -110,7 +114,7 @@ export function ScheduleBrowser({ conference, attendeeToken, initialTalkId, onPr
       {selected ? (
         <>
           <Action title="Back to event schedule" onPress={() => setSelected(undefined)} secondary />
-          <Label>{when(selected)}</Label>
+          <Label>{[dayLabel(selected), when(selected)].filter(Boolean).join(' · ')}</Label>
           <Heading large>{selected.title}</Heading>
           <Copy>{selected.abstract || selected.track}</Copy>
           <RelatedTalks key={selected.id} conference={conference} talk={selected} token={attendeeToken}
@@ -122,14 +126,35 @@ export function ScheduleBrowser({ conference, attendeeToken, initialTalkId, onPr
           <Copy>Choose a session to see its details and find related recordings. All times are Mountain Time.</Copy>
           <Field label="Search the event schedule" value={query} onChangeText={setQuery} />
           {!visible.length ? <Message>No sessions match your search.</Message> : null}
-          {visible.map((talk) => (
-            <View key={talk.id}>
-              <Label>{when(talk)}</Label>
-              <Action title={talk.title} onPress={() => setSelected(talk)} secondary />
+          <ScheduleColumns talks={visible} onTalk={setSelected}>
+            <View style={schedule.list}>
+              {visible.map((talk, index) => {
+                const date = dayLabel(talk);
+                const firstOnDay = index === 0 || talkDay(talk.startsAt) !== talkDay(visible[index - 1].startsAt);
+                return (
+                  <View key={talk.id}>
+                    {firstOnDay && date ? <View style={schedule.day}><Heading>{date}</Heading></View> : null}
+                    <View style={schedule.session}>
+                      <Label>{when(talk)}</Label>
+                      <Heading>{talk.title}</Heading>
+                      <TalkDetails title={talk.title} abstract={talk.abstract || 'No session description has been provided.'}
+                        extra={talk.track} />
+                      <Action title="Find similar past talks" accessibilityLabel={`Find similar past talks for ${talk.title}`}
+                        onPress={() => setSelected(talk)} secondary />
+                    </View>
+                  </View>
+                );
+              })}
             </View>
-          ))}
+          </ScheduleColumns>
         </>
       )}
     </Flow>
   );
 }
+
+const schedule = StyleSheet.create({
+  list: { gap: 4 },
+  day: { paddingTop: 12, paddingBottom: 10 },
+  session: { borderTopWidth: 1, borderColor: colors.chrome, paddingVertical: 14, gap: 5 },
+});
