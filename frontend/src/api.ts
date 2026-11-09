@@ -116,6 +116,21 @@ async function resumePart(resume: ResumeAsset): Promise<Blob | { uri: string; na
   return resume.file ?? new Blob([await (await fetch(resume.uri)).arrayBuffer()], { type });
 }
 
+export type ResumeProfile = {
+  headline: string; skills: string[]; interests: string[]; working_on: string; can_help_with: string; summary: string;
+};
+
+// Preview what a résumé contributes before saving. The server stores nothing for this call.
+export async function parseResume(resume: ResumeAsset, signal?: AbortSignal) {
+  const body = new FormData();
+  const part = await resumePart(resume);
+  if (part instanceof Blob) body.append('resume', part, resume.name);
+  else body.append('resume', part as unknown as Blob);
+  const response = await request(`${apiBase}/parse-resume`, { method: 'POST', body, signal }, 45000);
+  if (!response.ok) throw await apiError(response, 'Could not read the résumé.');
+  return response.json() as Promise<{ resume_profile: ResumeProfile; is_linkedin_pdf: boolean }>;
+}
+
 export async function saveLiveProfile(
   conference: Conference,
   profile: Attendee,
