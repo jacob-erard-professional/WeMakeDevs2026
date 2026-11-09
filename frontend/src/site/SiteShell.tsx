@@ -49,6 +49,7 @@ export function SiteShell({ page, navigate, scrollRef, children }: PropsWithChil
           <View style={shell.navActions}>
             <NavLink title="Search Talks" current={page === 'talks'} onPress={() => go('talks')} />
             <NavLink title="My conferences" current={page === 'myConferences'} onPress={() => go('myConferences')} />
+            <NavLink title="Organizers" current={page === 'organizers'} onPress={() => go('organizers')} />
             {!compact ? <NavLink title="Join event" current={page === 'join'} onPress={() => go('join')} /> : null}
           </View>
         </View>
