@@ -7,6 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Attendee, Conference } from './src/conference';
 import { demoConference } from './src/demoConference';
 import { conferenceFromSchedule, joinLiveConference, saveLiveProfile } from './src/api';
+import type { LiveRecommendations } from './src/api';
 import type { ParsedTalk } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
@@ -104,6 +105,7 @@ export default function App() {
   const [editing, setEditing] = useState(false);
   const [requested, setRequested] = useState<string[]>([]);
   const [attendeeToken, setAttendeeToken] = useState<string>();
+  const [recommendations, setRecommendations] = useState<LiveRecommendations>();
   const [browsingSchedule, setBrowsingSchedule] = useState(false);
   const [resumeTalk, setResumeTalk] = useState<string>();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -118,6 +120,7 @@ export default function App() {
     setEditing(false);
     setRequested([]);
     setAttendeeToken(undefined);
+    setRecommendations(undefined);
     setResumeTalk(undefined);
   }
 
@@ -145,6 +148,9 @@ export default function App() {
       const result = await saveLiveProfile(activeConference, next, attendeeToken);
       if (scope.current !== activeConference) return;
       if (result.attendee_token) setAttendeeToken(result.attendee_token);
+      setRecommendations(result.recommendations);
+    } else {
+      setRecommendations(undefined);
     }
     setProfile(next);
     setEditing(false);
@@ -200,6 +206,7 @@ export default function App() {
                     <ProfileForm initial={profile} sample={activeConference.sample} onStepChange={scrollToTop} onSave={saveProfile} />
                   ) : (
                     <Recommendations conference={activeConference} profile={profile} attendeeToken={attendeeToken} requested={requested}
+                      recommendations={recommendations}
                       onEdit={editProfile}
                       onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
                   )}

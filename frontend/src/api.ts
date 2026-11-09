@@ -24,6 +24,25 @@ export type ParsedTalk = {
 };
 export type ArchiveTalk = { title: string; conference?: string; year?: number; url?: string; video_url?: string };
 
+// Shapes returned by POST /save-user-data (backend `save_user_data`). Ranked talks are projected
+// through TALK_SOURCE, so abstract/speakers/track are only present when the index adds them.
+export type ApiTalk = {
+  talk_id: string; title: string; abstract?: string; speakers?: string[]; room?: string; track?: string[];
+  start_time: string; end_time: string; relevance: number;
+};
+export type ApiPerson = { attendee_id: string; name: string; headline?: string; score?: number; why?: string };
+export type LiveRecommendations = {
+  talks: ApiTalk[];
+  schedules: Array<{ relevance: number; talks: ApiTalk[] }>;
+  attendees: { similar: ApiPerson[]; matches: ApiPerson[] };
+};
+export type SaveProfileResult = {
+  attendee_id: string;
+  attendee_token?: string;
+  recommendations: LiveRecommendations;
+  resume_profile?: Record<string, unknown>;
+};
+
 async function request(url: string, options: RequestInit = {}, timeoutMs = 15000) {
   const controller = new AbortController();
   const cancel = () => controller.abort();
@@ -124,7 +143,18 @@ export async function saveLiveProfile(
     body,
   });
   if (!response.ok) throw await apiError(response, 'Could not save your profile to the conference server.');
-  return response.json() as Promise<{ attendee_token?: string }>;
+  const result = await response.json() as Partial<SaveProfileResult> & { attendee_id: string };
+  return {
+    ...result,
+    recommendations: {
+      talks: result.recommendations?.talks ?? [],
+      schedules: result.recommendations?.schedules ?? [],
+      attendees: {
+        similar: result.recommendations?.attendees?.similar ?? [],
+        matches: result.recommendations?.attendees?.matches ?? [],
+      },
+    },
+  } satisfies SaveProfileResult;
 }
 
 async function apiError(response: Response, fallback: string) {
