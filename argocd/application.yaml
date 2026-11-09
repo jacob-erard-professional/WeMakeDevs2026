@@ -1,0 +1,20 @@
+# Apply once (Radar MCP apply_resource on cluster wearedevs). Argo CD then deploys deploy/
+# from the `deploy` branch, which the build-and-deploy workflow updates after every merge to main.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+  namespace: team-wearedevs
+spec:
+  project: team-wearedevs
+  source:
+    repoURL: https://github.com/jacob-erard-professional/WeMakeDevs2026.git
+    targetRevision: deploy
+    path: deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-wearedevs
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
