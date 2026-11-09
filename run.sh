@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
+# Run the local FastAPI API used by the Expo app (default: http://localhost:8000).
 set -euo pipefail
 
-repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$repo_dir/backend"
-port="${PORT:-8000}"
-pid_file="$repo_dir/.backend-$port.pid"
+REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$REPO_ROOT/.env"
+HOST="${HOST:-0.0.0.0}"
+PORT="${PORT:-8000}"
 
-if [[ -f "$pid_file" ]] && kill -0 "$(<"$pid_file")" 2>/dev/null; then
-  echo "Backend already running with PID $(<"$pid_file")"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing .env. Copy .env.example to .env and set ES_URL and ES_API_KEY." >&2
   exit 1
 fi
 
-if ! python -c 'import fastapi, uvicorn, elasticsearch, qrcode' >/dev/null 2>&1; then
-  "$repo_dir/download_requirements.sh"
-fi
-
-python -m uvicorn app.main:app --host "${HOST:-0.0.0.0}" --port "$port" "$@" &
-pid=$!
-echo "$pid" > "$pid_file"
-trap 'rm -f "$pid_file"' EXIT INT TERM
-wait "$pid"
+cd "$REPO_ROOT/backend"
+exec python -m uvicorn app.main:app --host "$HOST" --port "$PORT" --env-file "$ENV_FILE"
