@@ -463,7 +463,9 @@ def write_tokens(path: Path, attendees: dict[str, dict[str, str]]) -> None:
         "note": "Demo attendee bearer tokens. Gitignored. Send as 'Authorization: Bearer <token>'.",
         "attendees": attendees,
     }
-    path.write_text(json.dumps(body, indent=2) + "\n")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as file:
+        file.write(json.dumps(body, indent=2) + "\n")
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
