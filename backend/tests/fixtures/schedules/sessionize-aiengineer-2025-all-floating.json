@@ -1,0 +1,191 @@
+{
+  "sessions": [
+    {
+      "id": "911821",
+      "title": "A2A & MCP: Automating Business Processes with LLMs",
+      "description": "Ever wished your webhooks could think for themselves? Join us to discover how A2A agents can transform passive webhook endpoints into intelligent workflow processors.\r\n\r\nIn this session, we'll show you how to build a system that automatically spawns AI Agents to handle incoming webhooks. \r\n\r\nUsing Google's Agent-to-Agent framework and MCP, you'll learn how to create dynamic AI agents that respond to events, communicate with external services, and make decisions based on content analysis.\r\n\r\nSee the future of workflow automation where webhooks don't just trigger actions—they trigger intelligence!",
+      "startsAt": "2025-06-03T09:00:00",
+      "endsAt": "2025-06-03T10:20:00",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "fa5f22ad-339b-485d-bbf2-620cbd069be9"
+      ],
+      "categoryItems": [],
+      "questionAnswers": [],
+      "roomId": 67100,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "915684",
+      "title": "Beyond Benchmarks: Strategies for Evaluating LLMs in Production",
+      "description": "Accuracy scores and leaderboard metrics look impressive—but production-grade AI requires evals that reflect real-world performance, reliability, and user happiness. Traditional benchmarks rarely help you understand how your LLM will perform when embedded in complex workflows or agentic systems. How can you realistically and adequately measure reasoning quality, agent consistency, MCP integration, and user-focused outcomes?\r\n\r\nIn this practical, example-driven talk, we'll go beyond standard benchmarks and dive into tangible evaluation strategies using various open-source frameworks like GuideLLM and lm-eval-harness. You'll see concrete examples of how to create custom eval suites tailored to your use case, integrate human-in-the-loop feedback effectively, and implement agent reliability checks that reflect production conditions. Walk away with actionable insights and best practices for ev...",
+      "startsAt": "2025-06-03T09:00:00",
+      "endsAt": "2025-06-03T10:20:00",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "8baabfb1-58b9-4ab8-b3af-95a406e99707"
+      ],
+      "categoryItems": [],
+      "questionAnswers": [],
+      "roomId": 67101,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "916066",
+      "title": "Introduction to LLM serving with SGLang",
+      "description": "Do you want to learn how to serve models like DeepSeek and Qwen with SOTA speeds on launch day? SGLang is an open-source fast serving framework for LLMs and VLMs that generates trillions of tokens per day at companies like xAI, AMD, and Meituan. This workshop guides AI engineers who are familiar with serving models using frameworks like vLLM, Ollama, and TensorRT-LLM through deploying and optimizing their first model with SGLang, as well as providing guidance on when SGLang is the appropriate tool for LLM workloads.",
+      "startsAt": "2025-06-03T09:00:00",
+      "endsAt": "2025-06-03T10:20:00",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "7cb31c6c-fcf2-4d0a-b4bb-6461d7776369",
+        "185f8d2f-07ad-4620-b34b-2c666d73acf2"
+      ],
+      "categoryItems": [],
+      "questionAnswers": [],
+      "roomId": 67099,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "929790",
+      "title": "Useful General Intelligence",
+      "description": "We’re all hearing that AI agents will enable AGI, but they can’t yet reliably perform even basic computer tasks. It turns out that getting AI to click, type, and scroll is more challenging than getting it to generate code. How can we build general-purpose agents that can do anything we can do on a computer? \r\n\r\nThis is our goal at the Amazon AGI SF Lab. In this talk, I’ll propose a new approach to agents that we call Useful General Intelligence. After describing how we’re solving the biggest challenges in computer use while enabling developers to access our tech in it’s earliest developmental stages, I’ll show real workflows that developers have built with Nova Act, our agentic model and SDK. ",
+      "startsAt": "2025-06-03T12:40:00",
+      "endsAt": "2025-06-03T13:00:00",
+      "isServiceSession": false,
+      "isPlenumSession": true,
+      "speakers": [
+        "4b95a47c-6ec3-4b44-ba84-c158e802fc89"
+      ],
+      "categoryItems": [],
+      "questionAnswers": [],
+      "roomId": 61338,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": false
+    }
+  ],
+  "speakers": [
+    {
+      "id": "fa5f22ad-339b-485d-bbf2-620cbd069be9",
+      "firstName": "Damien",
+      "lastName": "Murphy",
+      "bio": "Full Stack Dev for 20+ years focusing on AI Agents",
+      "tagLine": "Founding Engineer",
+      "profilePicture": "https://cdn.sessionize.com/image/2926-400o400o1-ptD5NY2jT64p32qQh2v4M2.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        911821
+      ],
+      "fullName": "Damien Murphy",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "4b95a47c-6ec3-4b44-ba84-c158e802fc89",
+      "firstName": "Danielle",
+      "lastName": "Perszyk",
+      "bio": "Danielle is a cognitive scientist at the new Amazon AGI SF Lab. She received her PhD from Northwestern, where she studied the evolution and development of language. Previously, she was at Google and Adept. ",
+      "tagLine": "Cognitive Scientist, PhD",
+      "profilePicture": "https://cdn.sessionize.com/image/b67c-400o400o1-BFXHNVeqAK4D8jNpezM9ZJ.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        929790
+      ],
+      "fullName": "Danielle Perszyk",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "7cb31c6c-fcf2-4d0a-b4bb-6461d7776369",
+      "firstName": "Philip",
+      "lastName": "Kiely",
+      "bio": "Philip Kiely leads Developer Relations at Baseten. Prior to joining Baseten in 2022, he worked across software engineering and technical writing for a variety of startups. Outside of work, you'll find Philip practicing martial arts, reading a new book, or cheering for his adopted bay area sports teams.",
+      "tagLine": "Head of Developer Relations",
+      "profilePicture": "https://cdn.sessionize.com/image/9495-400o400o1-U7SVLhc5ruNbNJ5xr6KF2Z.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        916066
+      ],
+      "fullName": "Philip Kiely",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "8baabfb1-58b9-4ab8-b3af-95a406e99707",
+      "firstName": "Taylor Jordan",
+      "lastName": "Smith",
+      "bio": "Taylor Smith, Senior Developer Advocate at Red Hat, is an advocate of open source AI innovation and democratization. She has a background in software development, open source technologies like Kubernetes and linux, and technical partnerships. Taylor loves music, animals, and helping to solve real-world problems with technology. Based out of North Carolina.",
+      "tagLine": "Senior Developer Advocate",
+      "profilePicture": "https://cdn.sessionize.com/image/56c7-400o400o1-QwkQZaQ3HC69a4FxSMzwBT.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        915684
+      ],
+      "fullName": "Taylor Jordan Smith",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "185f8d2f-07ad-4620-b34b-2c666d73acf2",
+      "firstName": "Yineng",
+      "lastName": "Zhang",
+      "bio": "Yineng Zhang is a Software Engineer at Baseten Model Performance team. He is also a core developer of the SGLang project.",
+      "tagLine": "Inference lead at SGLang",
+      "profilePicture": "https://cdn.sessionize.com/image/e95d-400o400o1-SDevFXKdezx37JYRHYKMF7.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        916066
+      ],
+      "fullName": "Yineng Zhang",
+      "categoryItems": [],
+      "questionAnswers": []
+    }
+  ],
+  "questions": [],
+  "categories": [],
+  "rooms": [
+    {
+      "id": 61338,
+      "name": "Golden Gate Ballroom A: Workshops",
+      "sort": 6
+    },
+    {
+      "id": 67099,
+      "name": "SOMA: Workshops",
+      "sort": 10
+    },
+    {
+      "id": 67100,
+      "name": "Foothill G1&2: Workshops",
+      "sort": 11
+    },
+    {
+      "id": 67101,
+      "name": "Nobhill A&B: Workshops",
+      "sort": 12
+    }
+  ]
+}

@@ -1,0 +1,436 @@
+{
+  "sessions": [
+    {
+      "id": "16cb0ba3-1374-4c9d-802b-1aa9a8ad29c5",
+      "title": "Registration",
+      "description": null,
+      "startsAt": "2026-05-20T06:00:00Z",
+      "endsAt": "2026-05-20T07:00:00Z",
+      "isServiceSession": true,
+      "isPlenumSession": false,
+      "speakers": [],
+      "categoryItems": [],
+      "questionAnswers": [],
+      "roomId": 80288,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": null,
+      "isInformed": false,
+      "isConfirmed": false
+    },
+    {
+      "id": "1151012",
+      "title": "Building Shared UI With Compose Multiplatform. Part 1.",
+      "description": "Take the next step in your cross-platform Kotlin journey with Compose Multiplatform! This workshop is for developers already familiar with the basics of Kotlin Multiplatform and Jetpack Compose who are looking to extend their skills by building a shared UI.\r\n\r\nWe’ll discuss how Compose Multiplatform works and show you how your existing Compose skills are reusable across platforms. You’ll have hands-on time with a wide range of Compose features, focusing on how they work across different platforms. During the workshop’s exercises, you’ll work with Compose code, explore APIs, build new features, improve accessibility, test the UI, and more.\r\n\r\nCovering the latest available APIs and best practices, we’ll equip you with everything you need to start using Compose Multiplatform in your own apps! Here is how the workshop will be structured:\r\n\r\nIntroduction\r\n- How Compose Multiplatform works\r\n-...",
+      "startsAt": "2026-05-20T07:00:00Z",
+      "endsAt": "2026-05-20T08:30:00Z",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "5307510b-c3fa-4f9c-a340-36d198198ef5",
+        "e21ee3c3-2e72-4fd2-8e5c-30511e30fe66"
+      ],
+      "categoryItems": [
+        447460,
+        389139
+      ],
+      "questionAnswers": [],
+      "roomId": 80293,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "1151063",
+      "title": "Building AI Agents in Kotlin with Koog. Part 1.",
+      "description": "Unlock the power of AI in Kotlin with Koog, a cutting-edge framework for creating AI agents, developed by JetBrains. Whether you’re prototyping quickly or deploying production-ready systems, this workshop will guide you through every step of the journey.\r\n\r\nDuring this workshop, you will learn how to:\r\n\r\n- Use a bunch of pre-defined components for a quick start\r\n- Create tools using simple syntax or more advanced, flexible patterns\r\n- Integrate third-party tools and agents via MCP and A2A protocols\r\n- Design advanced agent strategies tailored to complex, real-world problems\r\n- Use different models for different subtasks within a single agent\r\n- Add built-in history compression with multiple out-of-the-box strategies\r\n- Add checkpoints and persistency to make your agents fully recoverable and fault-tolerant\r\n- Build retrieval-augmented generation (RAG) pipelines\r\n- Set up tracing to obser...",
+      "startsAt": "2026-05-20T07:00:00Z",
+      "endsAt": "2026-05-20T08:30:00Z",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "b799eaff-0639-4aeb-a4cb-f96467b22410",
+        "ea32e9a2-b68e-44c5-b4b7-6d2aa0dc3141",
+        "0f769b19-d5f2-49fb-aa78-a086aa046b7e",
+        "319f41ec-ff4c-4716-b694-ee63290d2681"
+      ],
+      "categoryItems": [
+        447460,
+        389139
+      ],
+      "questionAnswers": [],
+      "roomId": 80288,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "1151104",
+      "title": "Asynchronous Programming With Kotlin Coroutines. Part 1.",
+      "description": "In this workshop, you’ll learn everything you need to know about how to be productive with coroutines in Kotlin. We’ll start with the basics of asynchronous programming, its differences from blocking code, and the concepts of suspending functions and coroutines. We’ll explore coroutine contexts, concurrent decomposition of work via deferreds, and structured concurrency with coroutine scopes.\r\n\r\nThe second part of the workshop will be devoted to Kotlin Flows. We’ll study how Kotlin Flows are designed on a basic level, learn the difference between hot and cold flows, discuss their typical usage patterns, and explore how they incorporate ideas from reactive streams. To deepen our understanding, we’ll also take a peek at some of the implementations behind flows and collectors. Throughout, we’ll see how they help you in writing safe and reliable concurrent systems, and how modern applications...",
+      "startsAt": "2026-05-20T07:00:00Z",
+      "endsAt": "2026-05-20T08:30:00Z",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "a82c6942-6e2b-4d80-9883-0b84b932d6ef",
+        "94fc2fde-5e41-4ea6-a223-cd61141397f9",
+        "09c3ee40-7683-4f35-8368-94b6fc4cf58a"
+      ],
+      "categoryItems": [
+        447460,
+        389139
+      ],
+      "questionAnswers": [],
+      "roomId": 81510,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "1151116",
+      "title": "Techniques for Seamless Code Sharing with Kotlin Multiplatform. Part 1.",
+      "description": "This is an intermediate/advanced workshop for experienced Kotlin Multiplatform developers. It is aimed at developers who have built projects with Kotlin Multiplatform and Jetpack Compose / Compose Multiplatform and now want to progress onto more advanced topics.\r\n\r\nThe workshop aims to equip attendees with the skills to write high-quality code and apps using Kotlin Multiplatform. The workshop will address the following topics:\r\n\r\nA Gentle(r) Introduction\r\n- Introducing an example project\r\n- Explaining project structure and architecture\r\n- Highlighting a few key libraries used in the project\r\n\r\nNative Integrations\r\n- Splash screens\r\n- Notifications\r\n- Working with files\r\n\r\nAdvanced Kotlin Multiplatform for iOS Targets\r\n- Debugging Kotlin/Swift\r\n- Understanding and improving Kotlin/Swift interoperability\r\n\r\nCode Quality\r\n- Code coverage with Kover (JVM-only)\r\n- Modularization\r\n\r\nApp Qualit...",
+      "startsAt": "2026-05-20T07:00:00Z",
+      "endsAt": "2026-05-20T08:30:00Z",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "62216efe-dd8b-4d8b-9800-1d51b57c4001",
+        "0fd04388-0a57-4c8e-9505-89d7962c2dba"
+      ],
+      "categoryItems": [
+        447460,
+        389139
+      ],
+      "questionAnswers": [],
+      "roomId": 80290,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "1151132",
+      "title": "Refactoring to Functional Kotlin. Part 1.",
+      "description": "Kotlin supports both object-oriented and functional styles of programming, but what should we do when we have OO code that should be functional? Refactor, of course!\r\n\r\nIn this workshop, Nat and Duncan, the authors of Java to Kotlin: A Refactoring Guidebook, take a web application and introduce techniques to gradually and safely migrate the code to the functional style better suited to today's architectures. Topics include:\r\n\r\n- Thinking in a functional way – Data, Calculations, and Actions\r\n- Migrating from mutable objects to immutable data classes\r\n- Converting business logic to a functional domain model\r\n- Where does the state live? Functional core / imperative shell\r\n- Choosing between functions and methods\r\n- Functional error handling",
+      "startsAt": "2026-05-20T07:00:00Z",
+      "endsAt": "2026-05-20T08:30:00Z",
+      "isServiceSession": false,
+      "isPlenumSession": false,
+      "speakers": [
+        "c471c1b0-53d7-45cf-a12c-340714972d83",
+        "30cc8bd5-49a1-4609-bf70-ff5e6b12b3c2"
+      ],
+      "categoryItems": [
+        447460,
+        389139
+      ],
+      "questionAnswers": [],
+      "roomId": 80292,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": "Accepted",
+      "isInformed": true,
+      "isConfirmed": true
+    },
+    {
+      "id": "9f453dff-85b0-471b-8aa5-a4d54b0add01",
+      "title": "Coffee Break",
+      "description": null,
+      "startsAt": "2026-05-20T08:30:00Z",
+      "endsAt": "2026-05-20T09:00:00Z",
+      "isServiceSession": true,
+      "isPlenumSession": false,
+      "speakers": [],
+      "categoryItems": [],
+      "questionAnswers": [],
+      "roomId": 80288,
+      "liveUrl": null,
+      "recordingUrl": null,
+      "status": null,
+      "isInformed": false,
+      "isConfirmed": false
+    }
+  ],
+  "speakers": [
+    {
+      "id": "94fc2fde-5e41-4ea6-a223-cd61141397f9",
+      "firstName": "Alejandro",
+      "lastName": "Serrano Mena",
+      "bio": "Alejandro Serrano Mena is a passionate of formal methods and functional programming in software development, especially using Kotlin and Haskell as languages. He works as researcher in the Kotlin Language Evolution team at JetBrains and helps co-maintaining the Arrow library. He enjoys not only using and improving those tools, but also spreading the word: he's written four books targeting differen...",
+      "tagLine": "Researcher @ Kotlin Language Evolution Team, JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/99b3-400o400o1-DH8MN1eR6p1cVBKCAhBdsC.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151104
+      ],
+      "fullName": "Alejandro Serrano Mena",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "319f41ec-ff4c-4716-b694-ee63290d2681",
+      "firstName": "Andrey",
+      "lastName": "Bragin",
+      "bio": "Senior Software Developer, Koog, JetBrains",
+      "tagLine": "Senior Software Developer, Koog @ JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/0402-400o400o1-Ei7XzbmgDYJoKkGPK55iqc.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151063
+      ],
+      "fullName": "Andrey Bragin",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "c471c1b0-53d7-45cf-a12c-340714972d83",
+      "firstName": "Duncan",
+      "lastName": "McGregor",
+      "bio": "Duncan has been a professional software developer for 35 years. He was lucky enough to be an early adopter of Object Oriented programming, which was the gateway drug to patterns, Extreme Programming, agile and lean. He coauthored Java to Kotlin: A Refactoring Guidebook, published by O’Reilly. These days he is mostly retired, but still produces a weekly YouTube video on something that interests him...",
+      "tagLine": "Still coding after all these years",
+      "profilePicture": "https://cdn.sessionize.com/image/55fe-400o400o1-PvFTW6mcgFnwG9vhdZpbgc.jpeg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151132
+      ],
+      "fullName": "Duncan McGregor",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "0fd04388-0a57-4c8e-9505-89d7962c2dba",
+      "firstName": "Konstantin",
+      "lastName": "Tskhovrebov",
+      "bio": "Kotlin Developer",
+      "tagLine": "Compose Multiplatform @ JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/3b19-400o400o1-KW4JRzPQG2inJog3CiuKqB.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151116
+      ],
+      "fullName": "Konstantin Tskhovrebov",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "5307510b-c3fa-4f9c-a340-36d198198ef5",
+      "firstName": "Márton",
+      "lastName": "Braun",
+      "bio": "Márton is a Kotlin Developer Advocate at JetBrains, working on making Kotlin Multiplatform awesome. Passionate about education, he's a guest lecturer at the Budapest University of Technology and Economics.\r\n\r\nHe’s been contributing to the community through writing, speaking, and open source libraries since his university days. He is a Google Developer Expert for Android and Kotlin, and a co-organi...",
+      "tagLine": "Developer Advocate @ JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/f6d2-400o400o1-D7nt831NARhVwky31BSy5F.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151012
+      ],
+      "fullName": "Márton Braun",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "30cc8bd5-49a1-4609-bf70-ff5e6b12b3c2",
+      "firstName": "Nat",
+      "lastName": "Pryce",
+      "bio": "Nat has been programming for *coughty-cough* years, in various languages, platforms, application domains and industries.",
+      "tagLine": "Consulting developer",
+      "profilePicture": "https://cdn.sessionize.com/image/ed81-400o400o1-d5-49a1-4609-bf70-ff5e6b12b3c2.dee62ee1-cc21-4bb5-8a97-8722716d8e4e.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151132
+      ],
+      "fullName": "Nat Pryce",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "09c3ee40-7683-4f35-8368-94b6fc4cf58a",
+      "firstName": "Natasha",
+      "lastName": "Murashkina",
+      "bio": "Coroutines are the best routines!",
+      "tagLine": "Kotlin Coroutines Developer @ JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/ac32-400o400o1-XvPzCHwoMQSydRjNjcHJCm.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151104
+      ],
+      "fullName": "Natasha Murashkina",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "62216efe-dd8b-4d8b-9800-1d51b57c4001",
+      "firstName": "Pamela",
+      "lastName": "Hill-Galloway",
+      "bio": "Pamela is a Developer Advocate for Kotlin Multiplatform at JetBrains and has more than 20 years of experience writing desktop, web and mobile apps. ",
+      "tagLine": "Developer Advocate at JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/3749-400o400o1-EDCQTVBeA2DnzdZFqo4gXa.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151116
+      ],
+      "fullName": "Pamela Hill-Galloway",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "a82c6942-6e2b-4d80-9883-0b84b932d6ef",
+      "firstName": "Sebastian",
+      "lastName": "Aigner",
+      "bio": "As a Kotlin and Compose Multiplatform Developer Advocate at JetBrains, Sebastian spends a lot of time thinking about how technology can advance and inspire people. When he first tried Kotlin, it was love at first sight. He is one of the hosts of the Talking Kotlin podcast, and creates videos for the official Kotlin YouTube channel. Sebastian loves to develop networked applications, uses Kotlin on...",
+      "tagLine": "Developer Advocate at JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/2ef9-400o400o1-XGxKBoqZvxxQxosrZHQHTT.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151104
+      ],
+      "fullName": "Sebastian Aigner",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "ea32e9a2-b68e-44c5-b4b7-6d2aa0dc3141",
+      "firstName": "Simon",
+      "lastName": "Vergauwen",
+      "bio": "Software engineer from Antwerp, Belgium. Interested in everything functional, and Kotlin. Loves OSS, cooking, snowboarding and Fallout.",
+      "tagLine": "Developer Advocate at JetBrains & OSS (arrow-kt) Maintainer",
+      "profilePicture": "https://cdn.sessionize.com/image/6718-400o400o1-fjw7kgxgtgQxuPy5N8d4np.png",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151063
+      ],
+      "fullName": "Simon Vergauwen",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "0f769b19-d5f2-49fb-aa78-a086aa046b7e",
+      "firstName": "Svetlana",
+      "lastName": "Isakova",
+      "bio": "Svetlana Isakova has worked on the Kotlin language at JetBrains. She’s co-authored the books \"Kotlin in Action\" and \"Atomic Kotlin\" and now is a Developer Advocate, where she spends her time teaching Kotlin and speaking at conferences worldwide. ",
+      "tagLine": "Developer Advocate, JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/5daa-400o400o1-9juRv43WFGQcGhJ31eGWsE.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151063
+      ],
+      "fullName": "Svetlana Isakova",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "b799eaff-0639-4aeb-a4cb-f96467b22410",
+      "firstName": "Vadim",
+      "lastName": "Briliantov",
+      "bio": "Technical Lead and author of Koog framework at JetBrains.\r\n\r\nOver the past 8 years at JetBrains, I have contributed to a wide range of projects including IntelliJ Kotlin plugin, Kotlin Libraries, Ktor framework, Qodana Cloud Backend, and Kotlin Multiplatform Tooling. I have also led the technological direction of AI agent development across multiple products as part of the AI Agents Platform. Curr...",
+      "tagLine": "JetBrains, Koog, Technical Lead",
+      "profilePicture": "https://cdn.sessionize.com/image/d09e-400o400o1-JEgWZRQdS3uULjRKM8VTQZ.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151063
+      ],
+      "fullName": "Vadim Briliantov",
+      "categoryItems": [],
+      "questionAnswers": []
+    },
+    {
+      "id": "e21ee3c3-2e72-4fd2-8e5c-30511e30fe66",
+      "firstName": "Victor",
+      "lastName": "Kropp",
+      "bio": "Victor is Compose Multiplatform Team Lead at JetBrains, where he participated in many projects including ReSharper, dotCover, Hub, Toolbox App and others. He is passionate about great user interfaces and efficient ways of creating them. In his free time Victor runs marathons and long-distance triathlons or hikes in the Alps with his family.",
+      "tagLine": "Compose Multiplatform Team Lead at JetBrains",
+      "profilePicture": "https://cdn.sessionize.com/image/4840-400o400o1-HaxsKG7s7WXGXzcj7VpGdN.jpg",
+      "isTopSpeaker": false,
+      "links": [],
+      "sessions": [
+        1151012
+      ],
+      "fullName": "Victor Kropp",
+      "categoryItems": [],
+      "questionAnswers": []
+    }
+  ],
+  "questions": [],
+  "categories": [
+    {
+      "id": 108055,
+      "title": "Session format",
+      "items": [
+        {
+          "id": 447460,
+          "name": "Workshop",
+          "sort": 3
+        }
+      ],
+      "sort": 0,
+      "type": "session"
+    },
+    {
+      "id": 108056,
+      "title": "Level",
+      "items": [
+        {
+          "id": 389139,
+          "name": "Intermediate",
+          "sort": 2
+        }
+      ],
+      "sort": 1,
+      "type": "session"
+    },
+    {
+      "id": 108057,
+      "title": "Category",
+      "items": [],
+      "sort": 2,
+      "type": "session"
+    }
+  ],
+  "rooms": [
+    {
+      "id": 80288,
+      "name": "Room 2",
+      "sort": 5
+    },
+    {
+      "id": 81510,
+      "name": "Room 3",
+      "sort": 6
+    },
+    {
+      "id": 80290,
+      "name": "Room 11a",
+      "sort": 7
+    },
+    {
+      "id": 80292,
+      "name": "Room 12a",
+      "sort": 9
+    },
+    {
+      "id": 80293,
+      "name": "Room 12b",
+      "sort": 10
+    }
+  ]
+}
