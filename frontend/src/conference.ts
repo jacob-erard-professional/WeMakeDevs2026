@@ -7,6 +7,7 @@ export type Talk = TimeRange & {
   room: string;
   abstract?: string;
   startsAt?: string;
+  endsAt?: string;
 };
 
 export type Conference = { name: string; code: string; talks: Talk[]; sample?: true };

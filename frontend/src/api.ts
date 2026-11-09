@@ -92,6 +92,7 @@ export function conferenceFromSchedule(data: JoinResponse): Conference {
     title: talk.title,
     abstract: talk.abstract,
     startsAt: talk.start_time,
+    endsAt: talk.end_time,
     track: talk.track?.join(', ') || 'Conference session',
     room: talk.room || 'Room to be announced',
     start: venueMinutes(talk.start_time),
