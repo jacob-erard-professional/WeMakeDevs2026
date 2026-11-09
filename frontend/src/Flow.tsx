@@ -27,10 +27,9 @@ export function useReduceMotion(): boolean {
   return useContext(ReduceMotion);
 }
 
-export function Flow({ step, style, fadeOnly, children }: PropsWithChildren<{
+export function Flow({ step, style, children }: PropsWithChildren<{
   step: string;
   style?: StyleProp<ViewStyle>;
-  fadeOnly?: boolean;
 }>) {
   const reduceMotion = useContext(ReduceMotion);
   const previousStep = useRef(step);
@@ -59,8 +58,8 @@ export function Flow({ step, style, fadeOnly, children }: PropsWithChildren<{
     <Animated.View style={[
       style,
       {
-        opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [fadeOnly ? 0.82 : 0.35, 1] }),
-        transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [fadeOnly ? 0 : 8, 0] }) }],
+        opacity: progress.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
+        transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
       },
     ]}>
       {children}
