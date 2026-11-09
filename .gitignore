@@ -224,3 +224,4 @@ __marimo__/
 .radar.log
 .backend-*.pid
 elastic-start-local/
+.demo-tokens.json

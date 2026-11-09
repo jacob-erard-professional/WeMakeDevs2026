@@ -40,6 +40,16 @@ the project's Manage/Kibana → API keys, or use the shared key passed around ou
   (Serverless rejects them); `semantic_text` uses Elastic-hosted inference endpoints by
   default, no local ML allocation needed.
 
+### Seed demo data
+
+`python3 scripts/seed_demo.py` (stdlib only) seeds the `cnh-slc-2026` demo conference
+through the public API: 20 talks via `POST /confirm-schedule` and 10 fake attendees via
+`POST /save-user-data`. It reads `ORGANIZER_API_KEY` from the environment or `.env`, defaults
+to `--base-url https://wearedevs.cnh.radarhq.io/api`, and is safe to re-run (stable
+`talk_id`s overwrite; known attendees are updated in place). Attendee bearer tokens land in
+the gitignored `.demo-tokens.json` (mode 600) so you can log in as a demo attendee.
+`--dry-run` prints the payloads without touching the network.
+
 ## You still need to do
 
 ### 1. Gitar (do this first)
