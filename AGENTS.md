@@ -85,7 +85,7 @@ Dash0 is an observability platform built natively on OpenTelemetry. Agent0 is it
    uv add opentelemetry-distro opentelemetry-exporter-otlp
    uv run opentelemetry-bootstrap -a requirements > otel-requirements.txt   # instrumentations for the libraries we use
    uv add -r otel-requirements.txt && rm otel-requirements.txt
-   uv run opentelemetry-instrument python -m <app>                 # reads the OTEL_* vars from .env
+   uv run --env-file .env opentelemetry-instrument python -m <app>   # loads the OTEL_* vars from .env
    ```
    Set `OTEL_SERVICE_NAME` per service. In Kubernetes, put the OTEL_* values in a Secret and mount them as env vars on each Deployment.
 2. Add manual spans around Elasticsearch queries and business actions (search, schedule build, check-in), with attributes like `talk.id`, `search.query`, `search.results`.
