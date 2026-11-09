@@ -40,6 +40,8 @@ ATTENDEES = {
             "resume_text": {"type": "semantic_text", "inference_id": ".jina-embeddings-v5-text-small"},
             "discovery_opt_in": {"type": "boolean"},
             "blockout_times": {"properties": {"start_time": {"type": "date"}, "end_time": {"type": "date"}}},
+            "email": {"type": "keyword", "index": False},        # disclosed only via accept-connection
+            "linkedin_url": {"type": "keyword", "index": False},
             "access_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
             "updated_at": {"type": "date"},
         },
