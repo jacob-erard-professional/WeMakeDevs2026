@@ -30,6 +30,13 @@ spec:
             # FastAPI needs it to build /api/docs and openapi.json links.
             - name: ROOT_PATH
               value: /api
+            # Public site origin for join_url in /confirm-schedule (a frontend route, so no /api).
+            - name: PUBLIC_BASE_URL
+              value: https://wearedevs.cnh.radarhq.io
+            # Lets local Expo web dev call the live API. Read by the CORS middleware from PR #25;
+            # until that lands it is inert.
+            - name: CORS_ORIGINS
+              value: http://localhost:8081,http://localhost:19006
           # ES_URL, ES_API_KEY, OPENAI_API_KEY, ORGANIZER_API_KEY and OTEL_EXPORTER_OTLP_* come
           # from Secret app-env, created outside git by scripts/push-secrets.sh.
           envFrom:
