@@ -199,6 +199,14 @@ export async function parseLiveSchedule(
   const query = new URLSearchParams({ conference_id: session.conferenceId });
   const headers = { 'X-Organizer-Token': session.organizerToken };
   let options: RequestInit = { method: 'POST', headers };
+  // Schedule pages often list wall-clock times with no zone (LF events, floating Sessionize).
+  // The organizer's browser zone is the best default for an in-person event.
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (timezone) query.set('timezone', timezone);
+  } catch {
+    // No Intl zone support: the backend falls back to the conference's stored zone.
+  }
   if (sourceUrl) query.set('source_url', sourceUrl);
   else if (asset) {
     const file = await resumePart(asset);
