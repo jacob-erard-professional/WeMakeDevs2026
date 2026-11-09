@@ -1,12 +1,13 @@
 import type { ComponentRef, PropsWithChildren } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { TextInputProps } from 'react-native';
+import type { StyleProp, TextInputProps, TextStyle } from 'react-native';
 
 export const colors = {
   ink: '#191924',
   muted: '#565666',
   paper: '#FAF9FD',
+  chrome: '#EAF0FA',
   white: '#FFFFFF',
   accent: '#5040AF',
   pale: '#EEEBF9',
@@ -22,7 +23,7 @@ export function Copy({ children }: PropsWithChildren) {
   return <Text style={styles.copy}>{children}</Text>;
 }
 
-export function Heading({ children, large }: PropsWithChildren<{ large?: boolean }>) {
+export function Heading({ children, large, style }: PropsWithChildren<{ large?: boolean; style?: StyleProp<TextStyle> }>) {
   const ref = useRef<ComponentRef<typeof Text>>(null);
   const focusOnWeb = large && Platform.OS === 'web';
   const focusProps = focusOnWeb ? { tabIndex: -1 } : {};
@@ -32,7 +33,7 @@ export function Heading({ children, large }: PropsWithChildren<{ large?: boolean
 
   return (
     <Text ref={ref} accessibilityRole="header" {...focusProps}
-      style={[styles.heading, large && styles.largeHeading]}>
+      style={[styles.heading, large && styles.largeHeading, style]}>
       {children}
     </Text>
   );
@@ -57,21 +58,24 @@ export function Field({ label, multiline, ...props }: TextInputProps & { label: 
   );
 }
 
-export function Action({ title, onPress, secondary, selected, disabled }: {
+export function Action({ title, onPress, secondary, selected, disabled, expanded, accessibilityLabel }: {
   title: string;
   onPress: () => void;
   secondary?: boolean;
   selected?: boolean;
   disabled?: boolean;
+  expanded?: boolean;
+  accessibilityLabel?: string;
 }) {
   const [focused, setFocused] = useState(false);
   const toggleState = Platform.OS === 'web'
-    ? { 'aria-pressed': selected, accessibilityState: { disabled } }
-    : { accessibilityState: { selected, disabled } };
+    ? { 'aria-pressed': selected, 'aria-expanded': expanded, accessibilityState: { disabled } }
+    : { accessibilityState: { selected, disabled, expanded } };
 
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       {...toggleState}
       disabled={disabled}
       onFocus={() => setFocused(true)}
@@ -88,6 +92,20 @@ export function Action({ title, onPress, secondary, selected, disabled }: {
         {title}
       </Text>
     </Pressable>
+  );
+}
+
+export function TalkDetails({ title, abstract, extra }: { title: string; abstract: string; extra?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = abstract.length > 150 ? `${abstract.slice(0, 150).replace(/\s+\S*$/, '')}…` : extra ? abstract : '';
+  return (
+    <View>
+      {expanded || summary ? <Copy>{expanded ? abstract : summary}</Copy> : null}
+      {expanded && extra ? <Copy>{extra}</Copy> : null}
+      <Action title={expanded ? 'Hide details' : 'Show details'} expanded={expanded}
+        accessibilityLabel={`${expanded ? 'Hide' : 'Show'} details for ${title}`}
+        onPress={() => setExpanded((open) => !open)} secondary />
+    </View>
   );
 }
 

@@ -40,6 +40,18 @@ the project's Manage/Kibana → API keys, or use the shared key passed around ou
   (Serverless rejects them); `semantic_text` uses Elastic-hosted inference endpoints by
   default, no local ML allocation needed.
 
+### Seed demo data
+
+`python3 scripts/seed_demo.py` (stdlib only) seeds a live demo conference through the public
+API: `POST /conferences` creates "Cloud Native Hackathon SLC 2026" and returns an organizer
+token, `POST /confirm-schedule` stores 20 talks, and `POST /save-user-data` creates 10 fake
+attendees (example.com emails, no resumes). It defaults to
+`--base-url https://wearedevs.cnh.radarhq.io/api`, prints only the conference id, the join URL
+and counts, and keeps the organizer and attendee tokens in the gitignored
+`scripts/.seed-organizer.json` (mode 600). Re-running reuses that conference (stable `talk_id`s
+overwrite; known attendees are updated in place); `--new-conference` starts another one.
+`--dry-run` prints the payloads without touching the network.
+
 ## You still need to do
 
 ### 1. Gitar (do this first)

@@ -1,0 +1,105 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+X-WR-CALNAME:kccncna2025
+X-WR-CALDESC:Event Calendar
+METHOD:PUBLISH
+CALSCALE:GREGORIAN
+PRODID:-//Sched.com KubeCon + CloudNativeCon North America 2025//EN
+X-WR-TIMEZONE:UTC
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251109T130000Z
+DTEND:20251109T220000Z
+SUMMARY:Badge Pick-Up
+DESCRIPTION:
+CATEGORIES:REGISTRATION
+LOCATION:Building B | Level 4 | Registration Hall B\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:dbf286ee2f6f4ebbd68758c72a0ac831
+URL:http://kccncna2025.sched.com/event/dbf286ee2f6f4ebbd68758c72a0ac831
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251110T152400Z
+DTEND:20251110T152900Z
+SUMMARY:Project Lightning Talk: Kubewarden: The Universal Policy Engine For Kubernetes
+DESCRIPTION:This lightning talk will demonstrate Kubewarden's capabilities as a "universal dynamic admission controller" for Kubernetes. We will showcase how Kubewarden seamlessly integrates various policy types – including policy groups\, Rego policies\, CEL policies\, and ordinary policies – along with the application of cluster and namespace-scoped policies. Through a live demonstration\, we will illustrate how all these features work in unison\, leveraging the `kwctl run` command for effective testing and validation. Attendees will gain insight into how Kubewarden provides a flexible and powerful solution for comprehensive policy enforcement across their Kubernetes environments.
+CATEGORIES:PROJECT OPPORTUNITIES
+LOCATION:Building C | Level 3 | Georgia Ballroom 2\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:010cdce653009dbaf746a5a53e193a13
+URL:http://kccncna2025.sched.com/event/010cdce653009dbaf746a5a53e193a13
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251110T165500Z
+DTEND:20251110T170000Z
+SUMMARY:Project Lightning Talk: GitOps With Or Without Git Using Flux - Tamao Nakahara\, Community Maintainer
+DESCRIPTION:GitOps has been an industry term since its inception from the Flux project. We'll give an overview of how to do it with or without Git\, follow best practices\, and be successful with the latest developments with Flux.
+CATEGORIES:PROJECT OPPORTUNITIES
+LOCATION:Building C | Level 3 | Georgia Ballroom 2\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:200d6698613995ea9ecbc1e54507989c
+URL:http://kccncna2025.sched.com/event/200d6698613995ea9ecbc1e54507989c
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251111T140000Z
+DTEND:20251111T142500Z
+SUMMARY:Keynote: Welcome + Opening Remarks - Jonathan Bryce\, Executive Director\, Cloud and Infrastructure\, Linux Foundation & Chris Aniszczyk\, CTO\, Cloud and Infrastructure\, Linux Foundation
+DESCRIPTION:
+CATEGORIES:KEYNOTE SESSIONS
+LOCATION:Building B | Level 1 | Exhibit Hall B2\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:1bfbeece449c3d2d66241beca3ca07d4
+URL:http://kccncna2025.sched.com/event/1bfbeece449c3d2d66241beca3ca07d4
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251111T154500Z
+DTEND:20251111T161500Z
+SUMMARY:Coffee Break ☕
+DESCRIPTION:View today's menu or stop by the Cloud Native Café in the Solutions Showcase for additional items (available for purchase).
+CATEGORIES:BREAKS
+LOCATION:Building B | Level 1 | Exhibit Hall B3-B5\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:a1187621f2fae236f53a25fb4931db87
+URL:http://kccncna2025.sched.com/event/a1187621f2fae236f53a25fb4931db87
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251111T161500Z
+DTEND:20251111T164500Z
+SUMMARY:Emissary-ingress: Version 4 and the Road Ahead - Flynn\, Buoyant
+DESCRIPTION:After a quick detour to do Emissary-ingress 3.10\, we're back to working on Emissary-ingress 4.0! This is the first new major version in some years for Emissary\, one of the first Kubernetes-native\, self-service API gateways and ingress controllers\, and it's quite a significant change under the hood.\n\nIn this session\, we'll start with a quick overview of the need for ingress controllers in general\, the benefits of self-service developer workflows\, and how Emissary-ingress can help with these issues. We'll also talk about the state of project\, the path we're taking with Emissary 4\, and how to get involved as a contributor\, how to best offer feedback\, and what's in store for the project in the future.\n\nEmissary's maintainer sessions are always great opportunities to talk directly with Emissary-ingress maintainers and make sure your voice is heard when it comes to the project's future -- looking forward to seeing you there!
+CATEGORIES:MAINTAINER TRACK
+LOCATION:Building C | Level 3 | Georgia Ballroom 1\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:740e4eecf05d158dd4b8895ac3724596
+URL:http://kccncna2025.sched.com/event/740e4eecf05d158dd4b8895ac3724596
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251111T161500Z
+DTEND:20251111T164500Z
+SUMMARY:Kubernetes Data Protection WG Intro & Deep Dive - Dave Smith-Uchida\, Veeam
+DESCRIPTION:Data Protection WG is dedicated to promoting data protection support in Kubernetes. The Working Group is working on identifying missing functionalities and collaborating across multiple SIGs to design features to enable data protection in Kubernetes. In this session\, we will discuss what is the current state of data protection in Kubernetes and where it is heading in the future. We will also talk about how interested parties (including storage and backup vendors\, cloud providers\, application developers\, and end users\, etc.) can join this WG and contribute to this effort. Details of the WG can be found here: https://github.com/kubernetes/community/tree/master/wg-data-protection.
+CATEGORIES:MAINTAINER TRACK
+LOCATION:Building C | Level 3 | Georgia Ballroom 2\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:bcef476f7c94530220aff41460a1b9bc
+URL:http://kccncna2025.sched.com/event/bcef476f7c94530220aff41460a1b9bc
+END:VEVENT
+BEGIN:VEVENT
+DTSTAMP:20251120T044702Z
+DTSTART:20251111T170000Z
+DTEND:20251111T173000Z
+SUMMARY:1000 Clusters\, 1 Brain: Salesforce’s Approach To Self-Healing Using AIOps - Vikram Venkataraman\, AWS & Srikanth Rajan\, Salesforce
+DESCRIPTION:As Kubernetes environments grow increasingly complex\, platform teams struggle with the escalating challenges of managing multi-tenant clusters efficiently. This session presents a groundbreaking approach to Kubernetes operations\, leveraging generative AI and multi-agent collaboration to create a self-healing\, intelligent cluster management system. Drawing from real-world implementations\, we'll demonstrate how intelligent agents can manage and troubleshoot over 1\,000 Kubernetes clusters\, dramatically reducing mean time to identify (MTTI) and mean time to resolve (MTTR) for critical cluster issues. Our solution combines advanced AI technologies with GitOps principles to create a comprehensive automation framework that: Intelligently analyzes cluster health using AI-powered introspection Automatically diagnoses complex Kubernetes problems Implements guardrail workflows for secure\, validated remediation Orchestrates multi-step resolutions with minimal human intervention
+CATEGORIES:AI + ML
+LOCATION:Building B | Level 5 | Thomas Murphy Ballroom 1\, Atlanta\, GA\, USA
+SEQUENCE:0
+UID:db04febfddddb5504ed19b9f0667fb52
+URL:http://kccncna2025.sched.com/event/db04febfddddb5504ed19b9f0667fb52
+END:VEVENT
+END:VCALENDAR

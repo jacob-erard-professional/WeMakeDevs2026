@@ -1,0 +1,236 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<schedule>
+  <version>latest</version>
+  <conference>
+    <acronym>fosdem-2025</acronym>
+    <title>FOSDEM 2025</title>
+    <subtitle />
+    <venue>ULB (Université Libre de Bruxelles)</venue>
+    <city>Brussels</city>
+    <start>2025-02-01</start>
+    <end>2025-02-02</end>
+    <days>1</days>
+    <day_change>09:00:00</day_change>
+    <timeslot_duration>00:05:00</timeslot_duration>
+    <base_url>https://fosdem.org/2025/schedule/</base_url>
+    <time_zone_name>Europe/Brussels</time_zone_name>
+  </conference>
+  <tracks>
+    <track online_qa="true" slug="keynote">Keynotes</track>
+    <track online_qa="true" slug="main_track_k_building">Main Track - K Building</track>
+  </tracks>
+  <day index="1" date="2025-02-01" start="2025-02-01T09:00:00+01:00" end="2025-02-02T08:59:00+01:00">
+    <room name="Janson" slug="janson">
+      <event guid="fdbc5919-f702-524c-9331-3a2c670f6ff3" id="6712">
+        <date>2025-02-01T09:30:00+01:00</date>
+        <start>09:30</start>
+        <duration>00:20</duration>
+        <room>Janson</room>
+        <slug>fosdem-2025-6712-welcome-to-fosdem-2025</slug>
+        <url>https://fosdem.org/2025/schedule/event/fosdem-2025-6712-welcome-to-fosdem-2025/</url>
+        <title>Welcome to FOSDEM 2025</title>
+        <subtitle />
+        <track slug="keynote">Keynotes</track>
+        <type>keynote</type>
+        <language>en</language>
+        <abstract>&lt;p&gt;FOSDEM welcome and opening talk.&lt;/p&gt;
+&lt;p&gt;Join us for the opening of our 25th event.&lt;/p&gt;</abstract>
+        <description />
+        <feedback_url>https://pretalx.fosdem.org/fosdem-2025/talk/XWNGQL/feedback/</feedback_url>
+        <persons>
+          <person id="2">FOSDEM Staff</person>
+          <person id="1324">Richard "RichiH" Hartmann</person>
+        </persons>
+        <attachments>
+          <attachment type="slides" href="https://fosdem.org/2025/events/attachments/fosdem-2025-6712-welcome-to-fosdem-2025/slides/237789/2025-02-0_6CcRbRi.pdf">Talk slides</attachment>
+        </attachments>
+        <links>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-6712-welcome-to-fosdem-2025.av1.webm">Video recording (AV1/WebM) - 56.3 MB</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-6712-welcome-to-fosdem-2025.mp4">Video recording (MP4) - 357.1 MB</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-6712-welcome-to-fosdem-2025.vtt">Video recording subtitle file (VTT)</link>
+          <link href="https://chat.fosdem.org/#/room/#2025-keynote:fosdem.org">Chat room(web)</link>
+          <link href="https://matrix.to/#/#2025-keynote:fosdem.org?web-instance[element.io]=chat.fosdem.org">Chat room(app)</link>
+          <link href="https://pretalx.fosdem.org/fosdem-2025/talk/XWNGQL/feedback/">Submit Feedback</link>
+        </links>
+      </event>
+      <event guid="5360da6e-7506-5ca3-a44a-f85447efaff5" id="5369">
+        <date>2025-02-01T10:00:00+01:00</date>
+        <start>10:00</start>
+        <duration>00:50</duration>
+        <room>Janson</room>
+        <slug>fosdem-2025-5369-program-to-learn-the-power-of-creative-coding</slug>
+        <url>https://fosdem.org/2025/schedule/event/fosdem-2025-5369-program-to-learn-the-power-of-creative-coding/</url>
+        <title>Program to Learn: The Power of Creative Coding</title>
+        <subtitle />
+        <track slug="keynote">Keynotes</track>
+        <type>keynote</type>
+        <language>en</language>
+        <abstract>&lt;p&gt;What was your first programming language? For some, it might have been &lt;em&gt;Logo&lt;/em&gt;; for others, &lt;em&gt;Scratch&lt;/em&gt;. Regardless of the language, many of us have fond memories of creating playful, creative programs as kids - not because we &lt;em&gt;had&lt;/em&gt; to, but because it was &lt;em&gt;fun&lt;/em&gt;.&lt;/p&gt;
+&lt;p&gt;What many don’t realize is that the joy of these early experiences wasn’t by chance. It stems from the pioneering work of Seymour Papert, Cynthia Solomon, and others at the MIT Logo Lab in the late 1960s. They developed an educational philosophy called &lt;em&gt;constructionism&lt;/em&gt; - the belief that children learn best when engaged in creative projects that connect with their personal interests. This philosophy shaped not only &lt;em&gt;Logo&lt;/em&gt; but an entire lineage of educational programming tools designed to make coding fun, expressive, and meaningful.&lt;/p&gt;
+&lt;p&gt;Today, as the "Learn to Code" movement is challenged by generative AI, researchers and educators are revisiting these roots. They view programming not merely as a utilitarian skill for the job market but as a medium for exploration and creative expression. From analyzing complex data to creating art and understanding systems, programming can be much more than a language to be learned - it can be a language &lt;em&gt;for&lt;/em&gt; learning.&lt;/p&gt;
+&lt;p&gt;For education, free and open-source software is a cornerstone. Free software ensures that tools remain accessible to all, fosters collaboration, and empowers learners to not only use but also understand and modify the systems they engage with - crucial for digital sovereignty.&lt;/p&gt;
+&lt;p&gt;In this talk, we’ll take you on a whirlwind tour of some of the most influential programming languages designed for children, from &lt;em&gt;&lt;a href="https://people.eecs.berkeley.edu/~bh/logo.html"&gt;Logo&lt;/a&gt;&lt;/em&gt;, &lt;em&gt;&lt;a href="https://github.com/codefrau/SqueakJS"&gt;Smalltalk&lt;/a&gt;&lt;/em&gt;, and &lt;em&gt;&lt;a href="https://squeak.org"&gt;Etoys&lt;/a&gt;&lt;/em&gt; to &lt;em&gt;&lt;a href="https://github.com/scratchfoundation"&gt;Scratch&lt;/a&gt;&lt;/em&gt; and their modern descendants like &lt;em&gt;&lt;a href="https://snap.berkeley.edu"&gt;Snap!&lt;/a&gt;&lt;/em&gt; and &lt;em&gt;&lt;a href="https://microblocks.fun"&gt;MicroBlocks&lt;/a&gt;&lt;/em&gt;. Rather than just describing these languages, we’ll &lt;em&gt;show&lt;/em&gt; you their power through live demos.&lt;/p&gt;</abstract>
+        <description />
+        <feedback_url>https://pretalx.fosdem.org/fosdem-2025/talk/L73ALS/feedback/</feedback_url>
+        <persons>
+          <person id="1541">Bernat Romagosa</person>
+          <person id="1542">John Maloney</person>
+          <person id="1783">Jens Mönig</person>
+          <person id="1784">Jadga Huegle</person>
+        </persons>
+        <attachments>
+        </attachments>
+        <links>
+          <link href="https://github.com/brianharvey/UCBLogo">UC Berkeley Logo</link>
+          <link href="https://dl.acm.org/doi/pdf/10.1145/800193.1971922">A Personal Computer for Children of All Ages (1972 Dynabook paper by Alan Kay)</link>
+          <link href="https://tinlizzie.org/IA/index.php/Talks_by_Alan_Kay">Video archive talks by Alan Kay</link>
+          <link href="https://www.youtube.com/watch?v=X2XNRzbSSuA">The Dynabook -- Past, Present and Future (video, 1986)</link>
+          <link href="https://worrydream.com/refs/Ingalls_2020_-_The_Evolution_of_Smalltalk.pdf">The Evolution of Smalltalk (Dan Ingalls, in HOPL 2020)</link>
+          <link href="https://github.com/dbanay/Smalltalk">Blue Book Smalltalk implementation written in C/C++</link>
+          <link href="https://squeak.js.org/">Squeak.js - A browser-based Squeak implementation that runs Squeak, Etoys, and Scratch 1.4</link>
+          <link href="https://en.scratch-wiki.info/wiki/Scratch_Versions">Scratch version history</link>
+          <link href="https://www.tiobe.com/tiobe-index/">TIOBE Programming Language Index (Scratch is currently #12)</link>
+          <link href="https://www.media.mit.edu/publications/mindstorms/">Mindstorms, by Seymour Papert, 1980 about the ideas behind LOGO (free full text pdf download)</link>
+          <link href="https://dl.acm.org/doi/epdf/10.1145/3386329">History of LOGO, Article by Cynthia Solomon, Brian Harvey, Ken Kahn, Henry Lieberman, et al. including modern block implementation such as Scratch and Snap!</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-5369-program-to-learn-the-power-of-creative-coding.av1.webm">Video recording (AV1/WebM) - 172.6 MB</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-5369-program-to-learn-the-power-of-creative-coding.mp4">Video recording (MP4) - 938.5 MB</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-5369-program-to-learn-the-power-of-creative-coding.vtt">Video recording subtitle file (VTT)</link>
+          <link href="https://chat.fosdem.org/#/room/#2025-keynote:fosdem.org">Chat room(web)</link>
+          <link href="https://matrix.to/#/#2025-keynote:fosdem.org?web-instance[element.io]=chat.fosdem.org">Chat room(app)</link>
+          <link href="https://pretalx.fosdem.org/fosdem-2025/talk/L73ALS/feedback/">Submit Feedback</link>
+        </links>
+      </event>
+      <event guid="a1118c00-1b1c-585a-bbff-2c330bd50db3" id="4564">
+        <date>2025-02-01T11:00:00+01:00</date>
+        <start>11:00</start>
+        <duration>00:50</duration>
+        <room>Janson</room>
+        <slug>fosdem-2025-4564-where-have-the-women-of-tech-history-gone-2-0</slug>
+        <url>https://fosdem.org/2025/schedule/event/fosdem-2025-4564-where-have-the-women-of-tech-history-gone-2-0/</url>
+        <title>Where have the women of tech history gone? 2.0</title>
+        <subtitle />
+        <track slug="keynote">Keynotes</track>
+        <type>keynote</type>
+        <language>en</language>
+        <abstract>&lt;p&gt;Last year, we explored the extraordinary contributions of women to the history of computer science. But did you know that was just the tip of the iceberg? After diving deeper into this fascinating subject, I’ve uncovered even more incredible stories to share.&lt;/p&gt;
+&lt;p&gt;What about the pioneer behind assembly language? Or the creator of the STP, without which the World Wide Web might never have existed? And what about the brilliant mind behind the ARM architecture?&lt;/p&gt;
+&lt;p&gt;Join me as we journey once again into the history of computer science to uncover the remarkable achievements of even more amazing women.&lt;/p&gt;</abstract>
+        <description />
+        <feedback_url>https://pretalx.fosdem.org/fosdem-2025/talk/SXENXX/feedback/</feedback_url>
+        <persons>
+          <person id="2532">Laura Durieux</person>
+        </persons>
+        <attachments>
+          <attachment type="slides" href="https://fosdem.org/2025/events/attachments/fosdem-2025-4564-where-have-the-women-of-tech-history-gone-2-0/slides/237840/laura_dur_XFqdGQ0.pdf">Slides</attachment>
+        </attachments>
+        <links>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-4564-where-have-the-women-of-tech-history-gone-2-0.av1.webm">Video recording (AV1/WebM) - 109.9 MB</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-4564-where-have-the-women-of-tech-history-gone-2-0.mp4">Video recording (MP4) - 826.8 MB</link>
+          <link href="https://video.fosdem.org/2025/janson/fosdem-2025-4564-where-have-the-women-of-tech-history-gone-2-0.vtt">Video recording subtitle file (VTT)</link>
+          <link href="https://chat.fosdem.org/#/room/#2025-keynote:fosdem.org">Chat room(web)</link>
+          <link href="https://matrix.to/#/#2025-keynote:fosdem.org?web-instance[element.io]=chat.fosdem.org">Chat room(app)</link>
+          <link href="https://pretalx.fosdem.org/fosdem-2025/talk/SXENXX/feedback/">Submit Feedback</link>
+        </links>
+      </event>
+    </room>
+    <room name="K.1.105 (La Fontaine)" slug="k1105">
+      <event guid="24c05c7e-bed1-50e3-a02a-c59161666dd3" id="6120">
+        <date>2025-02-01T10:00:00+01:00</date>
+        <start>10:00</start>
+        <duration>00:50</duration>
+        <room>K.1.105 (La Fontaine)</room>
+        <slug>fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms</slug>
+        <url>https://fosdem.org/2025/schedule/event/fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms/</url>
+        <title>Code Is Different: How the Norms and Nuances of the FOSS Developer Community Drive Content Moderation on Code Collaboration Platforms</title>
+        <subtitle />
+        <track slug="main_track_k_building">Main Track - K Building</track>
+        <type>maintrack</type>
+        <language>en</language>
+        <abstract>&lt;p&gt;Software code is not just content—it’s the foundation of critical digital infrastructure, and its unique functional purpose demands a specialized approach to platform governance. Unlike other digital media, code is widely duplicated, remixed, and shared under open source licensing terms, presenting distinct considerations for copyright and moderation. Additionally, the dual-use nature of software, such as security research projects, introduces complex challenges: tools designed to identify vulnerabilities can also be exploited for malicious purposes. Moderating a code collaboration platform requires careful consideration of open source software’s function as critical digital infrastructure and the network effects of takedowns. Likewise, code collaboration platforms must reflect the free and open source developer community’s values of collaboration and transparency, while empowering maintainers to support the health of their projects. &lt;/p&gt;
+&lt;p&gt;In this presentation, authors of the recently published article “Nuances and Challenges of Moderating a Code Collaboration Platform” in the Journal of Online Trust and Safety will discuss key takeaways. We’ll provide an under the hood look at how GitHub has developed tools and policies tailored to the needs of the free and open source software developer community. This will include a diverse set of case studies, including how we’ve responded to legal and policy challenges such as the EU Copyright Directive and US Digital Millennium Copyright Act, how we’ve evolved our approach to dual-use software over time, and how notable incidents such as the youtube-dl takedown and reinstatement have influenced our developer-first approach to content moderation. We will also touch on the importance of community content moderation and the tools we have developed for maintainers to establish expectations for conduct and contribution on their projects. Attendees will leave with an understanding of how the values of the free and open source developer community inform the governance of code collaboration platforms and how they can engage with platforms and policymakers.&lt;/p&gt;</abstract>
+        <description />
+        <feedback_url>https://pretalx.fosdem.org/fosdem-2025/talk/QDGSCP/feedback/</feedback_url>
+        <persons>
+          <person id="4708">Margaret Tucker</person>
+        </persons>
+        <attachments>
+          <attachment type="slides" href="https://fosdem.org/2025/events/attachments/fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms/slides/237790/MTucker_F_aBXVHme.pdf">Slides</attachment>
+          <attachment type="slides" href="https://fosdem.org/2025/events/attachments/fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms/slides/237790/tucker_co_OOWHtTa.pdf">Nuances and Challenges of Moderating a Code Collaboration Platform</attachment>
+        </attachments>
+        <links>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms.av1.webm">Video recording (AV1/WebM) - 100.2 MB</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms.mp4">Video recording (MP4) - 829.9 MB</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6120-code-is-different-how-the-norms-and-nuances-of-the-foss-developer-community-drive-content-moderation-on-code-collaboration-platforms.vtt">Video recording subtitle file (VTT)</link>
+          <link href="https://chat.fosdem.org/#/room/#2025-main_track_k_building:fosdem.org">Chat room(web)</link>
+          <link href="https://matrix.to/#/#2025-main_track_k_building:fosdem.org?web-instance[element.io]=chat.fosdem.org">Chat room(app)</link>
+          <link href="https://pretalx.fosdem.org/fosdem-2025/talk/QDGSCP/feedback/">Submit Feedback</link>
+        </links>
+      </event>
+      <event guid="ee68f058-7156-50e8-bcdf-0ac67494288f" id="6422">
+        <date>2025-02-01T11:00:00+01:00</date>
+        <start>11:00</start>
+        <duration>00:50</duration>
+        <room>K.1.105 (La Fontaine)</room>
+        <slug>fosdem-2025-6422-using-llms-to-support-firefox-developers-with-code-review</slug>
+        <url>https://fosdem.org/2025/schedule/event/fosdem-2025-6422-using-llms-to-support-firefox-developers-with-code-review/</url>
+        <title>Using LLMs to support Firefox developers with code review</title>
+        <subtitle />
+        <track slug="main_track_k_building">Main Track - K Building</track>
+        <type>maintrack</type>
+        <language>en</language>
+        <abstract>&lt;p&gt;Mozilla has been experimenting with the usage of machine learning (in particular, large language models) to aid Firefox developers with code review.&lt;/p&gt;
+&lt;p&gt;This talk will explain the architecture of the software, and the path that led there, including iterative improvements to the prompts, retrieval augmented generation, integration of pre-existing tools such as code search.&lt;/p&gt;
+&lt;p&gt;In addition, we will delve into the results of the initial experiments, our plans for the future of the tool, and the potential for its adoption in other open source projects.&lt;/p&gt;
+&lt;p&gt;The project source code is part of the &lt;a href="https://github.com/mozilla/bugbug"&gt;bugbug repository&lt;/a&gt;, which is a platform for Machine Learning projects on Software Engineering used by Mozilla for various tasks (for example, bug triage and test selection).&lt;/p&gt;</abstract>
+        <description />
+        <feedback_url>https://pretalx.fosdem.org/fosdem-2025/talk/NTY7U3/feedback/</feedback_url>
+        <persons>
+          <person id="2042">Marco Castelluccio</person>
+        </persons>
+        <attachments>
+          <attachment type="slides" href="https://fosdem.org/2025/events/attachments/fosdem-2025-6422-using-llms-to-support-firefox-developers-with-code-review/slides/237850/Using_LLM_bXsGC3u.pdf">Slides</attachment>
+        </attachments>
+        <links>
+          <link href="https://github.com/mozilla/bugbug">bugbug repository</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6422-using-llms-to-support-firefox-developers-with-code-review.av1.webm">Video recording (AV1/WebM) - 118.7 MB</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6422-using-llms-to-support-firefox-developers-with-code-review.mp4">Video recording (MP4) - 1.1 GB</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6422-using-llms-to-support-firefox-developers-with-code-review.vtt">Video recording subtitle file (VTT)</link>
+          <link href="https://chat.fosdem.org/#/room/#2025-main_track_k_building:fosdem.org">Chat room(web)</link>
+          <link href="https://matrix.to/#/#2025-main_track_k_building:fosdem.org?web-instance[element.io]=chat.fosdem.org">Chat room(app)</link>
+          <link href="https://pretalx.fosdem.org/fosdem-2025/talk/NTY7U3/feedback/">Submit Feedback</link>
+        </links>
+      </event>
+      <event guid="4f1410a3-ccfa-506b-a390-2f166c3f3967" id="6176">
+        <date>2025-02-01T12:00:00+01:00</date>
+        <start>12:00</start>
+        <duration>00:50</duration>
+        <room>K.1.105 (La Fontaine)</room>
+        <slug>fosdem-2025-6176-incremental-memory-safety-in-an-established-software-stack-lessons-learned-from-swift</slug>
+        <url>https://fosdem.org/2025/schedule/event/fosdem-2025-6176-incremental-memory-safety-in-an-established-software-stack-lessons-learned-from-swift/</url>
+        <title>Incremental Memory Safety in an Established Software Stack: Lessons Learned from Swift</title>
+        <subtitle />
+        <track slug="main_track_k_building">Main Track - K Building</track>
+        <type>maintrack</type>
+        <language>en</language>
+        <abstract>&lt;p&gt;In recent years, it has been repeatedly shown that memory safety problems account for the vast majority of security vulnerabilities in software systems. In response, security researchers and government agencies alike have urged software developers to replace their use of C and C++ with memory-safe programming languages. Fortunately, there are several native programming languages to choose from, but there is a catch: you must rewrite your code to get these memory-safety benefits. In today's established software systems, that could mean rewriting hundreds of millions of lines of existing C and C++ code, which is beyond impractical.&lt;/p&gt;
+&lt;p&gt;To move memory safety forward in an established software system, we propose an incremental approach comprised of three parts. First, use of a memory-safe language (in our case, &lt;a href="https://github.com/swiftlang/swift/"&gt;Swift&lt;/a&gt;) for new code or for targeted rewrites. Second, memory-safety improvements to C and C++ that can be applied to large swathes of existing code. Finally, deep interoperability between the memory-safe language and existing C and C++ without sacrificing memory safety. This talk will explore all three aspects of this approach in the context of Swift, and will reflect on lessons learned for both programming language design and rollout in an established software system.&lt;/p&gt;</abstract>
+        <description />
+        <feedback_url>https://pretalx.fosdem.org/fosdem-2025/talk/YPEPYR/feedback/</feedback_url>
+        <persons>
+          <person id="4727">Doug Gregor</person>
+        </persons>
+        <attachments>
+          <attachment type="slides" href="https://fosdem.org/2025/events/attachments/fosdem-2025-6176-incremental-memory-safety-in-an-established-software-stack-lessons-learned-from-swift/slides/237906/Increment_p8SfvGp.pdf">Slides</attachment>
+        </attachments>
+        <links>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6176-incremental-memory-safety-in-an-established-software-stack-lessons-learned-from-swift.av1.webm">Video recording (AV1/WebM) - 121.0 MB</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6176-incremental-memory-safety-in-an-established-software-stack-lessons-learned-from-swift.mp4">Video recording (MP4) - 1.1 GB</link>
+          <link href="https://video.fosdem.org/2025/k1105/fosdem-2025-6176-incremental-memory-safety-in-an-established-software-stack-lessons-learned-from-swift.vtt">Video recording subtitle file (VTT)</link>
+          <link href="https://chat.fosdem.org/#/room/#2025-main_track_k_building:fosdem.org">Chat room(web)</link>
+          <link href="https://matrix.to/#/#2025-main_track_k_building:fosdem.org?web-instance[element.io]=chat.fosdem.org">Chat room(app)</link>
+          <link href="https://pretalx.fosdem.org/fosdem-2025/talk/YPEPYR/feedback/">Submit Feedback</link>
+        </links>
+      </event>
+    </room>
+  </day>
+</schedule>

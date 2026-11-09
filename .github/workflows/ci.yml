@@ -51,7 +51,7 @@ jobs:
       - name: Validate Kubernetes manifests
         run: |
           shopt -s nullglob
-          files=(k8s/*.yaml k8s/*.yml)
+          files=(k8s/*.yaml k8s/*.yml deploy/*.yaml argocd/*.yaml)
           if [ ${#files[@]} -eq 0 ]; then
             echo "No manifests to validate."
             exit 0

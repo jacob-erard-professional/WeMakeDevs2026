@@ -11,15 +11,17 @@ import json
 import logging
 import os
 import secrets
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import qrcode
 from elasticsearch import ApiError, Elasticsearch, NotFoundError
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -34,6 +36,20 @@ from pydantic import BaseModel, Field, HttpUrl
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile as FormUploadFile
 
+from app.resume_parser import (
+    MAX_RESUME_CHARS,
+    ResumeProfile,
+    UnsupportedResumeType,
+    extract_contact,
+    extract_resume_text,
+    is_linkedin_pdf_text,
+    merge_resume_profile,
+    parse_resume,
+)
+from app.schedule_fetch import FetchError, UnsafeUrlError
+from app.schedule_parser import ALLOWED_UPLOAD_TYPES, ScheduleParseError, parse_schedule
+from app.schedule_recommendations import best_schedules
+
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("conference_api")
 
@@ -41,10 +57,14 @@ T = TypeVar("T")
 
 ES_URL = os.getenv("ES_URL", "http://localhost:9200")
 ES_API_KEY = os.getenv("ES_API_KEY")
-ORGANIZER_API_KEY = os.getenv("ORGANIZER_API_KEY", "")
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 # Even on purpose: bulk payloads are [action, document] pairs and a batch must never split one.
 BULK_BATCH_SIZE = 500
+# The platform gateway cuts every request at 15 s and semantic_text embeds ~50 talks per 3.4 s,
+# so anything above this many talks is indexed after the response is sent.
+SYNC_TALK_LIMIT = 100
+_schedule_jobs: set[asyncio.Task[None]] = set()  # keep background tasks referenced until done
+_schedule_locks: dict[str, asyncio.Lock] = {}
 es = (
     Elasticsearch(ES_URL, api_key=ES_API_KEY, request_timeout=5)
     if ES_API_KEY
@@ -91,6 +111,23 @@ _SEMANTIC = {"type": "semantic_text", "inference_id": JINA}
 # Index bodies from backend/docs/vector-matching.md. Serverless rejects shard/replica/refresh
 # settings, so only the analysis block is passed. `talks-archive` is read-only and not ours.
 INDEX_BODIES: dict[str, dict[str, Any]] = {
+    "conferences": {
+        "mappings": {
+            "dynamic": "strict",
+            "properties": {
+                "conference_id": _ID,
+                "name": _TEXT,
+                "organizer_token_sha256": {"type": "keyword", "index": False, "doc_values": False},
+                "created_at": _DATE,
+                # Publish state written by /confirm-schedule: indexing | ready | failed.
+                "schedule_status": _ID,
+                "schedule_talk_count": {"type": "integer"},
+                "schedule_indexed_count": {"type": "integer"},
+                "schedule_error": {"type": "keyword", "index": False},
+                "schedule_updated_at": _DATE,
+            },
+        },
+    },
     "talks": {
         "mappings": {
             "dynamic": "strict",
@@ -159,7 +196,18 @@ INDEX_BODIES: dict[str, dict[str, Any]] = {
     },
 }
 TALK_FIELDS = set(INDEX_BODIES["talks"]["mappings"]["properties"])
+SCHEDULE_STATUS_FIELDS = [
+    "schedule_status",
+    "schedule_talk_count",
+    "schedule_indexed_count",
+    "schedule_error",
+    "schedule_updated_at",
+]
 ATTENDEE_FIELDS = set(INDEX_BODIES["attendees"]["mappings"]["properties"])
+SAFE_ATTENDEE_SOURCE = {"includes": ["attendee_id", "name", "headline"]}
+TALK_SOURCE = ["talk_id", "title", "room", "start_time", "end_time"]
+SCHEDULE_CANDIDATE_LIMIT = 100
+SCHEDULE_OPTION_COUNT = 3
 
 _indices_ready = False
 INDEX_RETRY_MAX_SECONDS = 60.0
@@ -178,6 +226,9 @@ def ensure_indices() -> None:
             span.set_attribute("db.system", "elasticsearch")
             span.set_attribute("db.elasticsearch.index", index)
             if es.indices.exists(index=index):
+                if index == "conferences":
+                    # Strict mapping on a live index: adding fields is the only compatible change.
+                    es.indices.put_mapping(index=index, properties=body["mappings"]["properties"])
                 continue
             try:
                 es.indices.create(index=index, **body)
@@ -225,6 +276,16 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Conference API", version="0.1.0", lifespan=lifespan)
+# Browser origins allowed to call the API (e.g. Expo web on localhost); empty disables CORS.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Organizer-Token"],
+        allow_credentials=False,
+    )
 FastAPIInstrumentor.instrument_app(app)
 
 
@@ -234,6 +295,10 @@ FastAPIInstrumentor.instrument_app(app)
 class Blockout(BaseModel):
     start_time: datetime
     end_time: datetime
+
+
+class PeopleSearch(BaseModel):
+    note: str = Field(default="", max_length=500)
 
 
 class SaveUserData(BaseModel):
@@ -253,16 +318,52 @@ class SaveUserData(BaseModel):
     resume_text: str | None = Field(default=None, max_length=50_000)
 
 
-def profile_text(p: SaveUserData) -> str:
-    """Backend-built text behind the `profile` semantic field (spec: vector-matching.md)."""
+def profile_text(p: Mapping[str, Any]) -> str:
+    """Backend-built text behind the `profile` semantic field (spec: vector-matching.md).
+
+    Takes the attendee fields after résumé-derived values filled the empty ones, so the
+    embedding benefits from the parsed headline, skills and working_on too.
+    """
+    interests, skills = p.get("interests") or [], p.get("skills") or []
     parts = [
-        p.headline,
-        p.bio,
-        f"Working on: {p.working_on}" if p.working_on else "",
-        f"Interests: {', '.join(p.interests)}" if p.interests else "",
-        f"Skills: {', '.join(p.skills)}" if p.skills else "",
+        p.get("headline") or "",
+        p.get("bio") or "",
+        f"Working on: {p['working_on']}" if p.get("working_on") else "",
+        f"Interests: {', '.join(interests)}" if interests else "",
+        f"Skills: {', '.join(skills)}" if skills else "",
     ]
     return ". ".join(x for x in parts if x)
+
+
+async def read_resume_upload(upload: FormUploadFile) -> str:
+    """Size-check and extract text from an uploaded résumé; the raw bytes go no further."""
+    content = await upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Resume exceeds 10 MiB")
+    try:
+        text = await run_in_threadpool(
+            extract_resume_text, content, upload.content_type, upload.filename
+        )
+    except UnsupportedResumeType as exc:
+        raise HTTPException(415, str(exc)) from None
+    except Exception as exc:
+        logger.info("resume_text_extraction_failed type=%s", type(exc).__name__)
+        raise HTTPException(422, "The resume could not be read") from exc
+    return text[:MAX_RESUME_CHARS]
+
+
+async def parse_resume_traced(text: str) -> ResumeProfile:
+    """LLM + LinkedIn parse off the event loop, in a span that carries counts only."""
+    with tracer.start_as_current_span("parse_resume") as span:
+        span.set_attribute("resume.chars", len(text))
+        span.set_attribute("resume.is_linkedin_pdf", is_linkedin_pdf_text(text))
+        span.set_attribute("resume.llm_configured", bool(os.getenv("OPENAI_API_KEY")))
+        profile = await run_in_threadpool(parse_resume, text)
+        span.set_attribute("resume.skills_count", len(profile.skills))
+        span.set_attribute("resume.interests_count", len(profile.interests))
+        span.set_attribute("resume.has_headline", bool(profile.headline))
+        span.set_attribute("resume.profile_empty", profile.is_empty())
+    return profile
 
 
 class ConnectionRequest(BaseModel):
@@ -284,10 +385,16 @@ class ConfirmSchedule(BaseModel):
     talks: list[dict[str, Any]] = Field(min_length=1, max_length=1000)
 
 
+class CreateConference(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+
 # --- Elasticsearch access ----------------------------------------------------------------------
 
 
-async def es_call(operation: str, fn: Callable[[], T], **attributes: Any) -> T:
+async def es_call(
+    operation: str, fn: Callable[[], T], *, redact_error: bool = False, **attributes: Any
+) -> T:
     """Run a blocking Elasticsearch call off the event loop inside a span.
 
     NotFoundError -> 404, any other failure -> 503. Attributes must not contain user content.
@@ -303,9 +410,12 @@ async def es_call(operation: str, fn: Callable[[], T], **attributes: Any) -> T:
             span.set_status(Status(StatusCode.ERROR, "not_found"))
             raise HTTPException(404, "Not found") from exc
         except Exception as exc:
-            span.record_exception(exc)
             span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
-            logger.exception("es_operation=%s outcome=error", operation)
+            if redact_error:
+                logger.error("es_operation=%s outcome=error type=%s", operation, type(exc).__name__)
+            else:
+                span.record_exception(exc)
+                logger.exception("es_operation=%s outcome=error", operation)
             raise HTTPException(503, "Conference data store unavailable") from None
 
 
@@ -322,7 +432,11 @@ async def attendee_claim(
         span.set_attribute("db.system", "elasticsearch")
         try:
             doc = await run_in_threadpool(
-                lambda: es.get(index="attendees", id=f"{conference_id}:{attendee_id}")
+                lambda: es.get(
+                    index="attendees",
+                    id=f"{conference_id}:{attendee_id}",
+                    source_includes=["access_token_sha256"],
+                )
             )
         except NotFoundError as exc:
             raise HTTPException(401, "Invalid attendee token") from exc
@@ -337,11 +451,235 @@ async def attendee_claim(
     return conference_id, attendee_id
 
 
-def require_organizer(x_organizer_key: str | None = Header(default=None)) -> None:
-    if not ORGANIZER_API_KEY:
-        raise HTTPException(503, "Organizer authorization is not configured")
-    if not x_organizer_key or not secrets.compare_digest(x_organizer_key, ORGANIZER_API_KEY):
-        raise HTTPException(401, "Organizer authorization required")
+async def verify_organizer(conference_id: str, organizer_token: str | None) -> None:
+    """Authorize only the browser session that created this conference."""
+    if not organizer_token:
+        raise HTTPException(401, "Organizer token required")
+    conference = await es_call(
+        "read_organizer_claim",
+        lambda: es.get(
+            index="conferences",
+            id=conference_id,
+            source_includes=["organizer_token_sha256"],
+        )["_source"],
+    )
+    presented = hashlib.sha256(organizer_token.encode()).hexdigest()
+    if not hmac.compare_digest(conference.get("organizer_token_sha256", ""), presented):
+        raise HTTPException(401, "Organizer token required")
+
+
+def eligible_attendees(conference_id: str, attendee_id: str) -> dict[str, Any]:
+    """The mandatory privacy filter shared by every people recommendation."""
+    return {
+        "filter": [
+            {"term": {"conference_id": conference_id}},
+            {"term": {"discovery_opt_in": True}},
+        ],
+        "must_not": [{"term": {"attendee_id": attendee_id}}],
+    }
+
+
+def semantic_candidate(
+    field: str, text: str, conference_id: str, attendee_id: str
+) -> dict[str, Any]:
+    return {
+        "bool": {
+            "must": [{"semantic": {"field": field, "query": text}}],
+            **eligible_attendees(conference_id, attendee_id),
+        }
+    }
+
+
+def _hits_with_reason(hits: list[dict[str, Any]], highlight_field: str) -> list[dict[str, Any]]:
+    """Project only public identity plus the allowed semantic explanation."""
+    results: list[dict[str, Any]] = []
+    for hit in hits:
+        source = hit["_source"]
+        result = {
+            "attendee_id": source["attendee_id"],
+            "name": source["name"],
+            "headline": source.get("headline", ""),
+        }
+        fragments = hit.get("highlight", {}).get(highlight_field, [])
+        if fragments:
+            result["why"] = fragments[0]
+        results.append(result)
+    return results
+
+
+async def ranked_talks(profile: dict[str, Any], size: int = 20) -> list[dict[str, Any]]:
+    """Semantic schedule search with time conflicts removed by Elasticsearch."""
+    profile_query = " ".join(
+        part for part in (profile.get("profile", ""), profile.get("looking_for", "")) if part
+    ).strip()
+    must_not = [
+        {
+            "bool": {
+                "filter": [
+                    {"range": {"start_time": {"lt": blockout["end_time"]}}},
+                    {"range": {"end_time": {"gt": blockout["start_time"]}}},
+                ]
+            }
+        }
+        for blockout in profile.get("blockout_times", [])
+    ]
+    query: dict[str, Any] = {
+        "bool": {
+            "filter": [
+                {"term": {"conference_id": profile["conference_id"]}},
+                {"term": {"confirmed": True}},
+            ],
+            "must_not": must_not,
+        }
+    }
+    search: dict[str, Any] = {"index": "talks", "query": query, "source": TALK_SOURCE, "size": size}
+    if profile_query:
+        query["bool"]["must"] = [
+            {"semantic": {"field": "semantic_content", "query": profile_query}}
+        ]
+    else:
+        search["sort"] = [{"start_time": {"order": "asc"}}]
+    hits = await es_call("recommend_talks", lambda: es.search(**search)["hits"]["hits"])
+    # A missing score only occurs for the no-profile chronological fallback.  Equal
+    # relevance then lets the schedule builder maximize how many talks fit.
+    return [hit["_source"] | {"relevance": float(hit.get("_score") or 1.0)} for hit in hits]
+
+
+async def recommended_talks(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    return await ranked_talks(profile)
+
+
+def build_recommended_schedules(talks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Use Elasticsearch relevance as the weights for k-best interval scheduling."""
+    with tracer.start_as_current_span("build_recommended_schedules") as span:
+        schedules = best_schedules(talks, count=SCHEDULE_OPTION_COUNT)
+        span.set_attribute("schedule.candidate_count", len(talks))
+        span.set_attribute("schedule.option_count", len(schedules))
+    return schedules
+
+
+async def recommended_schedules(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    talks = await ranked_talks(profile, size=SCHEDULE_CANDIDATE_LIMIT)
+    return build_recommended_schedules(talks)
+
+
+async def recommended_people(
+    profile: dict[str, Any], note: str = ""
+) -> dict[str, list[dict[str, Any]]]:
+    """Run the Q1 similarity and Q2 two-sided matching searches from vector-matching.md."""
+    conference_id = profile["conference_id"]
+    attendee_id = profile["attendee_id"]
+    profile_query = profile.get("profile", "")
+    similar: list[dict[str, Any]] = []
+    if profile_query:
+        retrievers: list[dict[str, Any]] = [
+            {
+                "standard": {
+                    "query": semantic_candidate(
+                        "profile", profile_query, conference_id, attendee_id
+                    )
+                }
+            },
+            {
+                "standard": {
+                    "query": semantic_candidate(
+                        "resume_text", profile_query, conference_id, attendee_id
+                    )
+                }
+            },
+        ]
+        interests_and_skills = list(profile.get("skills", [])) + list(profile.get("interests", []))
+        if interests_and_skills:
+            retrievers.append(
+                {
+                    "standard": {
+                        "query": {
+                            "bool": {
+                                "should": [
+                                    {"terms": {"skills": profile.get("skills", [])}},
+                                    {"terms": {"interests": profile.get("interests", [])}},
+                                ],
+                                "minimum_should_match": 1,
+                                **eligible_attendees(conference_id, attendee_id),
+                            }
+                        }
+                    }
+                }
+            )
+        hits = await es_call(
+            "recommend_similar_attendees",
+            lambda: es.search(
+                index="attendees",
+                size=10,
+                source=SAFE_ATTENDEE_SOURCE,
+                retriever={"rrf": {"rank_window_size": 50, "retrievers": retrievers}},
+                highlight={"fields": {"profile": {"type": "semantic", "number_of_fragments": 1}}},
+            )["hits"]["hits"],
+        )
+        similar = _hits_with_reason(hits, "profile")
+
+    match_retrievers: list[dict[str, Any]] = []
+    looking_for = note or profile.get("looking_for", "")
+    if looking_for:
+        match_retrievers.append(
+            {
+                "retriever": {
+                    "standard": {
+                        "query": semantic_candidate(
+                            "can_help_with", looking_for, conference_id, attendee_id
+                        )
+                    }
+                },
+                "weight": 0.55 if note else 0.7,
+            }
+        )
+    if note:
+        match_retrievers.append(
+            {
+                "retriever": {
+                    "standard": {
+                        "query": semantic_candidate("profile", note, conference_id, attendee_id)
+                    }
+                },
+                "weight": 0.3,
+            }
+        )
+    if profile.get("can_help_with"):
+        match_retrievers.append(
+            {
+                "retriever": {
+                    "standard": {
+                        "query": semantic_candidate(
+                            "looking_for", profile["can_help_with"], conference_id, attendee_id
+                        )
+                    }
+                },
+                "weight": 0.15 if note else 0.3,
+            }
+        )
+    matches: list[dict[str, Any]] = []
+    if match_retrievers:
+        hits = await es_call(
+            "recommend_mutual_attendees",
+            lambda: es.search(
+                index="attendees",
+                size=10,
+                source=SAFE_ATTENDEE_SOURCE,
+                retriever={
+                    "linear": {
+                        "rank_window_size": 50,
+                        "normalizer": "minmax",
+                        "retrievers": match_retrievers,
+                    }
+                },
+                highlight={
+                    "fields": {"can_help_with": {"type": "semantic", "number_of_fragments": 1}}
+                },
+            )["hits"]["hits"],
+            redact_error=bool(note),
+        )
+        matches = _hits_with_reason(hits, "can_help_with")
+    return {"similar": similar, "matches": matches}
 
 
 # --- Routes ------------------------------------------------------------------------------------
@@ -350,6 +688,94 @@ def require_organizer(x_organizer_key: str | None = Header(default=None)) -> Non
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/conferences", status_code=201)
+async def create_conference(payload: CreateConference) -> dict[str, str]:
+    """Start an organizer session and return its one-time-visible management token."""
+    await ensure_indices_ready()
+    conference_id = f"conference-{uuid4().hex[:12]}"
+    organizer_token = secrets.token_urlsafe(32)
+    await es_call(
+        "create_conference",
+        lambda: es.index(
+            index="conferences",
+            id=conference_id,
+            document={
+                "conference_id": conference_id,
+                "name": payload.name.strip(),
+                "organizer_token_sha256": hashlib.sha256(organizer_token.encode()).hexdigest(),
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+            op_type="create",
+            refresh="wait_for",
+        ),
+    )
+    return {"conference_id": conference_id, "organizer_token": organizer_token}
+
+
+@app.get("/join/{conference_id}")
+async def join_conference(conference_id: str) -> dict[str, Any]:
+    """Resolve a QR/link to its confirmed, public schedule without exposing attendee data."""
+    conference = await es_call(
+        "read_join_conference_metadata",
+        lambda: es.get(
+            index="conferences",
+            id=conference_id,
+            source_includes=["name", *SCHEDULE_STATUS_FIELDS],
+        )["_source"],
+    )
+    hits = await es_call(
+        "read_join_conference",
+        lambda: es.search(
+            index="talks",
+            size=1000,
+            source=["talk_id", "title", "abstract", "track", "room", "start_time", "end_time"],
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"conference_id": conference_id}},
+                        {"term": {"confirmed": True}},
+                    ]
+                }
+            },
+            sort=[{"start_time": {"order": "asc"}}],
+        )["hits"]["hits"],
+        **{"db.elasticsearch.index": "talks"},
+    )
+    schedule_status = conference.get("schedule_status") or ("ready" if hits else "none")
+    if not hits and schedule_status != "indexing":
+        raise HTTPException(404, "Conference not found or has no confirmed schedule")
+    return {
+        "conference_id": conference_id,
+        "name": conference["name"],
+        "schedule_status": schedule_status,
+        "talk_count": len(hits),
+        "talks": [hit["_source"] for hit in hits],
+    }
+
+
+@app.get("/conferences/{conference_id}/schedule-status")
+async def schedule_status(conference_id: str) -> dict[str, Any]:
+    """Public publish progress for a conference; polled while /confirm-schedule indexes."""
+    conference = await es_call(
+        "read_schedule_status",
+        lambda: es.get(
+            index="conferences",
+            id=conference_id,
+            source_includes=["name", *SCHEDULE_STATUS_FIELDS],
+        )["_source"],
+        **{"db.elasticsearch.index": "conferences"},
+    )
+    return {
+        "conference_id": conference_id,
+        "name": conference["name"],
+        "schedule_status": conference.get("schedule_status") or "none",
+        "schedule_talk_count": conference.get("schedule_talk_count"),
+        "schedule_indexed_count": conference.get("schedule_indexed_count"),
+        "schedule_error": conference.get("schedule_error"),
+        "schedule_updated_at": conference.get("schedule_updated_at"),
+    }
 
 
 @app.post("/save-user-data")
@@ -369,16 +795,7 @@ async def save_user_data(
         upload = form.get("resume")
         # request.form() yields starlette's UploadFile, not fastapi's subclass.
         if isinstance(upload, FormUploadFile):
-            # Spec: store extracted text only, never the file. PDF/DOCX extraction is a
-            # follow-up (pypdf / python-docx); plain text is accepted today.
-            if upload.content_type != "text/plain":
-                raise HTTPException(
-                    415, "Resume upload currently accepts text/plain; send PDF/DOCX as resume_text"
-                )
-            content = await upload.read(MAX_UPLOAD_BYTES + 1)
-            if len(content) > MAX_UPLOAD_BYTES:
-                raise HTTPException(413, "Resume exceeds 10 MiB")
-            uploaded_resume_text = content.decode("utf-8", errors="replace")[:50_000]
+            uploaded_resume_text = await read_resume_upload(upload)
     else:
         try:
             payload = SaveUserData.model_validate(await request.json())
@@ -386,6 +803,10 @@ async def save_user_data(
             raise HTTPException(422, "Request body must be valid profile JSON") from exc
     if identity and identity[0] != payload.conference_id:
         raise HTTPException(403, "Attendee token belongs to another conference")
+    if payload.resume_text and payload.resume_text.lstrip().lower().startswith("data:"):
+        raise HTTPException(
+            422, "Upload a resume file or send extracted plain text, not base64 data"
+        )
     attendee_id = identity[1] if identity else str(uuid4())
     token = None if identity else secrets.token_urlsafe(32)
     for slot in payload.blockout_times:
@@ -397,9 +818,22 @@ async def save_user_data(
             raise HTTPException(
                 422, "Blockout times must be timezone-aware and have end after start"
             )
-    doc = payload.model_dump(mode="json") | {
+    # Parse only résumé text that arrived in this request; stored text was parsed when saved.
+    new_resume_text = uploaded_resume_text or payload.resume_text or ""
+    # The join form prefills bio/interests from POST /parse-resume first. When it did, skip the
+    # second LLM pass: it only fills empty fields and costs ~8 s against the platform's 15 s
+    # request limit. The raw resume text is still stored and embedded either way.
+    already_filled = bool(payload.bio.strip() and payload.interests)
+    resume_profile = (
+        await parse_resume_traced(new_resume_text)
+        if new_resume_text.strip() and not already_filled
+        else ResumeProfile()
+    )
+    # Typed values win; the résumé only fills empty fields (skills/interests are unioned).
+    merged = merge_resume_profile(payload.model_dump(mode="json"), resume_profile)
+    doc = merged | {
         "attendee_id": attendee_id,
-        "profile": profile_text(payload),
+        "profile": profile_text(merged),
         "updated_at": datetime.now(UTC).isoformat(),
     }
     if uploaded_resume_text:
@@ -407,71 +841,206 @@ async def save_user_data(
     # Strict mapping: drop empty optionals and anything the mapping does not know.
     doc = {k: v for k, v in doc.items() if k in ATTENDEE_FIELDS and v not in (None, "", [])}
     attendee_doc_id = f"{payload.conference_id}:{attendee_id}"
+    previous: dict[str, Any] | None = None
     if token:
         doc["access_token_sha256"] = hashlib.sha256(token.encode()).hexdigest()
     elif identity:
-        old = await es_call(
-            "read_attendee", lambda: es.get(index="attendees", id=attendee_doc_id)["_source"]
-        )
-        doc["access_token_sha256"] = old["access_token_sha256"]
-    await es_call(
-        "save_attendee", lambda: es.index(index="attendees", id=attendee_doc_id, document=doc)
-    )
-    talks = await es_call(
-        "recommend_talks",
-        lambda: es.search(
-            index="talks",
-            query={"bool": {"filter": [{"term": {"conference_id": payload.conference_id}}]}},
-            source={"excludes": ["semantic_content"]},
-            size=100,
-        )["hits"]["hits"],
-    )
-    blockouts = [(b.start_time, b.end_time) for b in payload.blockout_times]
-    recommendations = []
-    for hit in talks:
-        talk = hit["_source"]
-        try:
-            start = datetime.fromisoformat(talk["start_time"].replace("Z", "+00:00"))
-            end = datetime.fromisoformat(talk["end_time"].replace("Z", "+00:00"))
-            if any(start < stop and begin < end for begin, stop in blockouts):
-                continue
-        except (KeyError, ValueError):
-            pass
-        recommendations.append(talk)
-    users = []
-    if payload.discovery_opt_in:
-        found = await es_call(
-            "recommend_attendees",
-            lambda: es.search(
+        previous = await es_call(
+            "read_attendee",
+            lambda: es.get(
                 index="attendees",
-                query={
-                    "bool": {
-                        "filter": [
-                            {"term": {"conference_id": payload.conference_id}},
-                            {"term": {"discovery_opt_in": True}},
-                        ],
-                        "must_not": [{"term": {"attendee_id": attendee_id}}],
-                    }
-                },
-                source={"includes": ["attendee_id", "name", "headline"]},
-                size=20,
-            )["hits"]["hits"],
+                id=attendee_doc_id,
+                source_includes=["access_token_sha256", "resume_text"],
+            )["_source"],
         )
-        users = [
-            {
-                "attendee_id": h["_source"]["attendee_id"],
-                "name": h["_source"]["name"],
-                "headline": h["_source"].get("headline", ""),
-            }
-            for h in found
-        ]
+        doc["access_token_sha256"] = previous["access_token_sha256"]
+    # An update without a new resume must not accidentally erase the attendee's private resume.
+    if "resume_text" not in doc and previous and previous.get("resume_text"):
+        doc["resume_text"] = previous["resume_text"]
+    await es_call(
+        "save_attendee",
+        # semantic_text embeds every text field on write; the client's 5 s default is too short.
+        lambda: es.options(request_timeout=30).index(
+            index="attendees", id=attendee_doc_id, document=doc, refresh="wait_for"
+        ),
+    )
+    recommendation_profile = doc | {
+        "conference_id": payload.conference_id,
+        "attendee_id": attendee_id,
+    }
+    ranked = await ranked_talks(recommendation_profile, size=SCHEDULE_CANDIDATE_LIMIT)
+    recommendations = ranked[:20]
+    schedules = build_recommended_schedules(ranked)
+    people = (
+        await recommended_people(recommendation_profile)
+        if payload.discovery_opt_in
+        else {"similar": [], "matches": []}
+    )
     result: dict[str, Any] = {
         "attendee_id": attendee_id,
-        "recommendations": {"talks": recommendations, "attendees": users},
+        "recommendations": {
+            "talks": recommendations,
+            "schedules": schedules,
+            "attendees": people,
+        },
+        # What the résumé contributed, so the form can show "We picked up: ..." for editing.
+        # Derived fields only; the raw resume_text is never echoed back.
+        "resume_profile": resume_profile.model_dump(),
     }
     if token:
         result["attendee_token"] = f"{payload.conference_id}:{attendee_id}:{token}"
     return result
+
+
+@app.post("/parse-resume")
+async def parse_resume_preview(resume: UploadFile = File(...)) -> dict[str, Any]:
+    """Preview what a résumé contributes to the profile. Stores nothing; same limits as save."""
+    text = await read_resume_upload(resume)
+    profile = await parse_resume_traced(text) if text.strip() else ResumeProfile()
+    return {
+        "resume_profile": profile.model_dump(),
+        "is_linkedin_pdf": is_linkedin_pdf_text(text),
+        # For prefilling the uploader's own form only; nothing is stored by this endpoint.
+        "contact": extract_contact(text),
+    }
+
+
+async def claimed_profile(
+    conference_id: str, profile_id: str | None, identity: tuple[str, str] | None
+) -> dict[str, Any]:
+    """Load a profile only for its bearer token; profile IDs are not credentials."""
+    if not identity or identity[0] != conference_id:
+        raise HTTPException(401, "Valid attendee token for this conference required")
+    if profile_id and profile_id != identity[1]:
+        raise HTTPException(403, "A profile can only be read by its owner")
+    return await es_call(
+        "read_recommendation_profile",
+        lambda: es.get(
+            index="attendees",
+            id=f"{conference_id}:{identity[1]}",
+            source_includes=[
+                "conference_id",
+                "attendee_id",
+                "profile",
+                "looking_for",
+                "can_help_with",
+                "skills",
+                "interests",
+                "blockout_times",
+                "discovery_opt_in",
+            ],
+        )["_source"],
+    )
+
+
+@app.get("/conferences/{conference_id}/talks/recommend")
+async def get_talk_recommendations(
+    conference_id: str,
+    profile_id: str | None = Query(default=None),
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    profile = await claimed_profile(conference_id, profile_id, identity)
+    return {"talks": await recommended_talks(profile)}
+
+
+@app.get("/conferences/{conference_id}/schedules")
+async def get_recommended_schedules(
+    conference_id: str,
+    profile_id: str | None = Query(default=None),
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    """Return the three best relevance-weighted, conflict-free schedule choices."""
+    profile = await claimed_profile(conference_id, profile_id, identity)
+    return {"schedules": await recommended_schedules(profile)}
+
+
+@app.get("/conferences/{conference_id}/people/recommend")
+async def get_people_recommendations(
+    conference_id: str,
+    profile_id: str | None = Query(default=None),
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    profile = await claimed_profile(conference_id, profile_id, identity)
+    if not profile.get("discovery_opt_in"):
+        return {"similar": [], "matches": []}
+    return await recommended_people(profile)
+
+
+@app.post("/conferences/{conference_id}/people/recommend")
+async def search_people_recommendations(
+    conference_id: str,
+    payload: PeopleSearch,
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    """Refine suggestions using a request-scoped note without changing the profile."""
+    profile = await claimed_profile(conference_id, None, identity)
+    if not profile.get("discovery_opt_in"):
+        return {"similar": [], "matches": []}
+    return await recommended_people(profile, payload.note.strip())
+
+
+async def conference_talk(conference_id: str, talk_id: str) -> dict[str, Any]:
+    return await es_call(
+        "read_talk",
+        lambda: es.get(
+            index="talks",
+            id=f"{conference_id}:{talk_id}",
+            source_includes=["title", "abstract"],
+        )["_source"],
+    )
+
+
+@app.get("/conferences/{conference_id}/talks/{talk_id}/attendees")
+async def attendees_for_talk(
+    conference_id: str,
+    talk_id: str,
+    x_organizer_token: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Organizer-only Q4: names are limited to attendees who opted into discovery."""
+    await verify_organizer(conference_id, x_organizer_token)
+    talk = await conference_talk(conference_id, talk_id)
+    query_text = f"{talk.get('title', '')}. {talk.get('abstract', '')}".strip()
+    hits = await es_call(
+        "recommend_talk_attendees",
+        lambda: es.search(
+            index="attendees",
+            size=10,
+            source=SAFE_ATTENDEE_SOURCE,
+            query={
+                "bool": {
+                    "must": [{"semantic": {"field": "profile", "query": query_text}}],
+                    "filter": [
+                        {"term": {"conference_id": conference_id}},
+                        {"term": {"discovery_opt_in": True}},
+                    ],
+                }
+            },
+        )["hits"]["hits"],
+    )
+    return {"attendees": _hits_with_reason(hits, "profile")}
+
+
+@app.get("/conferences/{conference_id}/talks/{talk_id}/related-archive")
+async def related_archive_talks(
+    conference_id: str,
+    talk_id: str,
+    identity: tuple[str, str] | None = Depends(attendee_claim),
+) -> dict[str, Any]:
+    """Q5: retrieve related recordings from the read-only past-talk archive."""
+    if not identity or identity[0] != conference_id:
+        raise HTTPException(401, "Valid attendee token for this conference required")
+    talk = await conference_talk(conference_id, talk_id)
+    query_text = f"{talk.get('title', '')}. {talk.get('abstract', '')}".strip()
+    hits = await es_call(
+        "recommend_archive_talks",
+        lambda: es.search(
+            index="talks-archive",
+            size=5,
+            source=["title", "conference", "year", "url", "video_url"],
+            query={"semantic": {"field": "semantic_content", "query": query_text}},
+        )["hits"]["hits"],
+    )
+    return {"talks": [hit["_source"] for hit in hits]}
 
 
 @app.post("/request-connection", status_code=201)
@@ -487,7 +1056,10 @@ async def request_connection(
     recipient_doc_id = f"{payload.conference_id}:{payload.recipient_id}"
     try:
         recipient = await es_call(
-            "read_recipient", lambda: es.get(index="attendees", id=recipient_doc_id)["_source"]
+            "read_recipient",
+            lambda: es.get(
+                index="attendees", id=recipient_doc_id, source_includes=["discovery_opt_in"]
+            )["_source"],
         )
     except HTTPException as exc:
         if exc.status_code == 404:
@@ -545,7 +1117,11 @@ async def accept_connection(
     )
     own_profile = await es_call(
         "read_acceptor",
-        lambda: es.get(index="attendees", id=f"{payload.conference_id}:{identity[1]}")["_source"],
+        lambda: es.get(
+            index="attendees",
+            id=f"{payload.conference_id}:{identity[1]}",
+            source_includes=["email", "linkedin_url", "resume_text"],
+        )["_source"],
     )
     disclosed: dict[str, Any] = {"attendee_id": identity[1]}
     if payload.share_email:
@@ -564,28 +1140,63 @@ async def accept_connection(
 @app.post("/upload-schedule")
 async def upload_schedule(
     conference_id: str,
-    source_url: HttpUrl | None = None,
+    source_url: str | None = None,
+    timezone: str | None = None,
     file: UploadFile | None = File(default=None),
-    _: None = Depends(require_organizer),
+    x_organizer_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    await verify_organizer(conference_id, x_organizer_token)
     if bool(source_url) == bool(file):
         raise HTTPException(422, "Provide exactly one of source_url or file")
+    if timezone:
+        try:
+            ZoneInfo(timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(422, "timezone must be an IANA zone name") from None
+    else:
+        # The conferences mapping is strict and has no timezone field yet; if one is added later
+        # (as an IANA name) it becomes the default without touching this handler.
+        conference = await es_call(
+            "read_conference_timezone",
+            lambda: es.get(index="conferences", id=conference_id)["_source"],
+        )
+        timezone = conference.get("timezone") or None
+    content: bytes | None = None
     if file:
-        if file.content_type not in {"application/pdf", "image/png", "image/jpeg", "image/webp"}:
-            raise HTTPException(415, "Supported uploads: PDF, PNG, JPEG, WEBP")
+        if (file.content_type or "").split(";")[0].strip() not in ALLOWED_UPLOAD_TYPES:
+            raise HTTPException(
+                415, "Supported uploads: ICS, JSON, XML, HTML, PDF, DOCX, PNG, JPEG, WEBP"
+            )
         content = await file.read(MAX_UPLOAD_BYTES + 1)
         if len(content) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Upload exceeds 10 MiB")
-    # Parser boundary: implement parser client here. Do not fetch arbitrary URLs in this service.
-    logger.info(
-        "schedule_parse_requested conference_id=%s source_type=%s",
-        conference_id,
-        "url" if source_url else "file",
-    )
-    raise HTTPException(
-        501,
-        "Schedule parser is not configured; implement backend.app.schedule_parser.parse_schedule",
-    )
+    with tracer.start_as_current_span("parse_schedule") as span:
+        span.set_attribute("conference.id", conference_id)
+        span.set_attribute("schedule.source_type", "url" if source_url else "file")
+        try:
+            parsed = await run_in_threadpool(
+                parse_schedule,
+                conference_id=conference_id,
+                source_url=source_url,
+                content=content,
+                content_type=file.content_type if file else None,
+                filename=file.filename if file else None,
+                timezone=timezone,
+            )
+        except (UnsafeUrlError, FetchError, ScheduleParseError) as exc:
+            span.set_attribute("schedule.rejected", type(exc).__name__)
+            raise HTTPException(422, str(exc)) from None
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            logger.warning(
+                "schedule_parse_failed conference_id=%s error=%s", conference_id, type(exc).__name__
+            )
+            raise HTTPException(502, "Schedule parser could not produce a draft") from None
+        span.set_attribute("schedule.source_format", parsed.get("source_format") or "unknown")
+        span.set_attribute("schedule.talk_count", len(parsed["talks"]))
+        span.set_attribute("schedule.warning_count", len(parsed["warnings"]))
+    return {"conference_id": conference_id, **parsed}
 
 
 def _string_list(value: Any) -> list[str]:
@@ -644,8 +1255,9 @@ def talk_document(
 
 @app.post("/confirm-schedule")
 async def confirm_schedule(
-    payload: ConfirmSchedule, _: None = Depends(require_organizer)
+    payload: ConfirmSchedule, x_organizer_token: str | None = Header(default=None)
 ) -> dict[str, Any]:
+    await verify_organizer(payload.conference_id, x_organizer_token)
     await ensure_indices_ready()
     normalized: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -666,60 +1278,159 @@ async def confirm_schedule(
             talk_id = f"{talk_id}-{position}"
         seen_ids.add(talk_id)
         normalized.append(talk_document(payload.conference_id, talk, talk_id, start, end))
-    actions: list[dict[str, Any]] = []
-    for talk in normalized:
-        doc_id = f"{payload.conference_id}:{talk['talk_id']}"
-        actions.append({"index": {"_index": "talks", "_id": doc_id}})
-        actions.append(talk)
-    for i in range(0, len(actions), BULK_BATCH_SIZE):
-        batch = actions[i : i + BULK_BATCH_SIZE]
-        resp = await es_call(
-            "confirm_schedule",
-            lambda batch=batch: es.bulk(operations=batch, refresh="wait_for"),
-            **{"db.elasticsearch.index": "talks", "conference.talk_count": len(batch) // 2},
-        )
-        body = getattr(resp, "body", resp)
-        if body.get("errors"):
-            failed = [
-                item for item in body.get("items", []) if "error" in next(iter(item.values()), {})
-            ]
-            logger.error(
-                "confirm_schedule_bulk_failed conference_id=%s failed_count=%d first_error=%s",
-                payload.conference_id,
-                len(failed),
-                next(iter(failed[0].values())).get("error") if failed else None,
-            )
-            raise HTTPException(502, "Some talks could not be stored")
-    confirmed_ids = [talk["talk_id"] for talk in normalized]
-    removed = await es_call(
-        "remove_stale_talks",
-        lambda: es.delete_by_query(
-            index="talks",
-            query={
-                "bool": {
-                    "filter": [{"term": {"conference_id": payload.conference_id}}],
-                    "must_not": [{"terms": {"talk_id": confirmed_ids}}],
-                }
-            },
-            refresh=True,
-            conflicts="proceed",
-        ),
-        **{"db.elasticsearch.index": "talks", "conference.talk_count": len(confirmed_ids)},
+    conference_id = payload.conference_id
+    await set_schedule_status(
+        conference_id, "indexing", talk_count=len(normalized), indexed_count=0, error=None
     )
-    logger.info(
-        "confirm_schedule_stale_removed conference_id=%s deleted=%s",
-        payload.conference_id,
-        getattr(removed, "body", removed).get("deleted"),
-    )
-    join_url = (
-        f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/join/{payload.conference_id}"
-    )
+    if len(normalized) <= SYNC_TALK_LIMIT:
+        # Small enough to embed inside the 15 s gateway budget: finish before answering.
+        try:
+            await index_schedule(conference_id, normalized)
+        except ScheduleIndexError as exc:
+            raise HTTPException(502, str(exc)) from None
+        status = "ready"
+    else:
+        job = asyncio.create_task(index_schedule_job(conference_id, normalized))
+        _schedule_jobs.add(job)
+        job.add_done_callback(_schedule_jobs.discard)
+        status = "indexing"
+    join_url = f"{os.getenv('PUBLIC_BASE_URL', 'http://localhost:8000')}/join/{conference_id}"
     qr = qrcode.make(join_url)
     buffer = io.BytesIO()
     qr.save(buffer, format="PNG")
     return {
-        "conference_id": payload.conference_id,
+        "conference_id": conference_id,
         "talk_count": len(normalized),
+        "status": status,
         "join_url": join_url,
         "qr_code_data_url": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode(),
     }
+
+
+class ScheduleIndexError(Exception):
+    """A bulk batch was rejected; the old schedule is left in place."""
+
+
+async def set_schedule_status(
+    conference_id: str,
+    status: str,
+    *,
+    talk_count: int | None = None,
+    indexed_count: int | None = None,
+    error: str | None = None,
+) -> None:
+    """Record publish progress on the conference doc. Raises HTTPException(503) on ES failure."""
+    doc: dict[str, Any] = {
+        "schedule_status": status,
+        "schedule_updated_at": datetime.now(UTC).isoformat(),
+    }
+    if talk_count is not None:
+        doc["schedule_talk_count"] = talk_count
+    if indexed_count is not None:
+        doc["schedule_indexed_count"] = indexed_count
+    # `error` is our own message, never user content; None clears a previous failure.
+    doc["schedule_error"] = error
+    await es_call(
+        "write_schedule_status",
+        lambda: es.update(index="conferences", id=conference_id, doc=doc),
+        **{"db.elasticsearch.index": "conferences", "conference.schedule_status": status},
+    )
+
+
+def _schedule_lock(conference_id: str) -> asyncio.Lock:
+    # In-process only: with two replicas, confirms for one conference that land on different
+    # pods can still overlap. Stable talk ids make the bulk writes idempotent; only the stale
+    # delete could race, and it is bounded by the confirmed id list of whichever ran last.
+    lock = _schedule_locks.get(conference_id)
+    if lock is None:
+        lock = _schedule_locks[conference_id] = asyncio.Lock()
+    return lock
+
+
+async def index_schedule(conference_id: str, talks: list[dict[str, Any]]) -> None:
+    """Bulk-index every talk, then delete the ones no longer in the schedule.
+
+    The stale delete runs only after every batch succeeded, so a failure never wipes the old
+    schedule. Raises ScheduleIndexError on a rejected batch; ES transport errors surface as the
+    HTTPException(503) that es_call raises.
+    """
+    actions: list[dict[str, Any]] = []
+    for talk in talks:
+        actions.append({"index": {"_index": "talks", "_id": f"{conference_id}:{talk['talk_id']}"}})
+        actions.append(talk)
+    async with _schedule_lock(conference_id):
+        indexed = 0
+        for i in range(0, len(actions), BULK_BATCH_SIZE):
+            batch = actions[i : i + BULK_BATCH_SIZE]
+            resp = await es_call(
+                "confirm_schedule",
+                # semantic_text embeds every talk on write (~3.4 s per 50); 5 s is far too short.
+                lambda batch=batch: es.options(request_timeout=60).bulk(
+                    operations=batch, refresh="wait_for"
+                ),
+                **{"db.elasticsearch.index": "talks", "conference.talk_count": len(batch) // 2},
+            )
+            body = getattr(resp, "body", resp)
+            if body.get("errors"):
+                failed = [
+                    item
+                    for item in body.get("items", [])
+                    if "error" in next(iter(item.values()), {})
+                ]
+                logger.error(
+                    "confirm_schedule_bulk_failed conference_id=%s failed_count=%d first_error=%s",
+                    conference_id,
+                    len(failed),
+                    next(iter(failed[0].values())).get("error") if failed else None,
+                )
+                raise ScheduleIndexError("Some talks could not be stored")
+            indexed += len(batch) // 2
+            await set_schedule_status(conference_id, "indexing", indexed_count=indexed)
+        confirmed_ids = [talk["talk_id"] for talk in talks]
+        removed = await es_call(
+            "remove_stale_talks",
+            lambda: es.delete_by_query(
+                index="talks",
+                query={
+                    "bool": {
+                        "filter": [{"term": {"conference_id": conference_id}}],
+                        "must_not": [{"terms": {"talk_id": confirmed_ids}}],
+                    }
+                },
+                refresh=True,
+                conflicts="proceed",
+            ),
+            **{"db.elasticsearch.index": "talks", "conference.talk_count": len(confirmed_ids)},
+        )
+        logger.info(
+            "confirm_schedule_stale_removed conference_id=%s deleted=%s",
+            conference_id,
+            getattr(removed, "body", removed).get("deleted"),
+        )
+        await set_schedule_status(conference_id, "ready", indexed_count=len(talks), error=None)
+
+
+async def index_schedule_job(conference_id: str, talks: list[dict[str, Any]]) -> None:
+    """Background wrapper: own span, never lets an exception escape unlogged."""
+    with tracer.start_as_current_span("confirm_schedule_background") as span:
+        span.set_attribute("conference.talk_count", len(talks))
+        try:
+            await index_schedule(conference_id, talks)
+            span.set_attribute("conference.schedule_status", "ready")
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            detail = getattr(exc, "detail", None) or str(exc) or type(exc).__name__
+            logger.exception(
+                "confirm_schedule_background_failed conference_id=%s error=%s",
+                conference_id,
+                type(exc).__name__,
+            )
+            try:
+                await set_schedule_status(
+                    conference_id, "failed", error=f"{type(exc).__name__}: {detail}"[:500]
+                )
+            except Exception:
+                logger.exception(
+                    "confirm_schedule_status_write_failed conference_id=%s", conference_id
+                )

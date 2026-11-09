@@ -113,25 +113,27 @@ Radar is an open-source Kubernetes UI. Its AI SRE finds root causes from the UI 
 - Radar is part of how we ship: the agent deploys, debugs, triggers rollouts and checks audits through Radar's MCP.
 - Radar's AI SRE finding and fixing something real during the day, shown in the demo.
 
-**Already set up**
-- `kubectl`, `kind` and `kubectl-radar` (v1.19) in `~/.local/bin`.
-- `k8s/kind-config.yaml`: cluster `wemakedevs2026`, app NodePort `30080` → `http://localhost:8081`.
-- `./scripts/dev-up.sh` creates the cluster and starts Radar at http://localhost:9280 (MCP at `/mcp`).
-- `.mcp.json` registers the `radar` MCP server (approve it once when Claude Code starts in this folder).
-- Radar's AI investigations use the local `claude`/`codex` CLI, so no API key is needed. Pick the model under Settings → AI investigations.
+**Our cluster (hosted by Radar, from [skyhook-io/cnh-starter](https://github.com/skyhook-io/cnh-starter))**
+- Radar Cloud org **Cloud Native Hackathon**, cluster **`wearedevs`** (id `I1d3f9_NaQI`), namespace **`team-wearedevs`**, public URL https://wearedevs.cnh.radarhq.io.
+- MCP server `radar-cloud` (`https://api.radarhq.io/mcp`, user scope). **Pass `cluster: I1d3f9_NaQI` on every call**; the org lists ~60 clusters. Never call tools against `cnh` or another team's cluster. Pass `namespace: team-wearedevs` wherever a tool takes one.
+- Pre-installed, don't remove or upgrade: Argo CD (`argocd`, no web UI: drive it with `manage_gitops`), Argo Rollouts, Prometheus (`monitoring`; `discover_metrics` / `query_prometheus`), CloudNativePG (`cnpg-system`), Radar 1.20 (`radar`), Secret `default/kubeconfig`.
+- Budget across the whole cluster: 2 CPU / 4 GiB requests, 4 CPU / 8 GiB limits, 4 PVCs / 20 GiB. No NodePort/LoadBalancer, no privileged or host-access pods; refused pods stay `Pending` with a `SyncError` event.
+- The local kind cluster (`./scripts/dev-up.sh`, `radar` MCP at localhost:9280) is a fallback only.
 
-**How to set it up for the project**
-1. Containerize each service and load images into kind: `docker build -t <svc>:dev . && kind load docker-image <svc>:dev --name wemakedevs2026`.
-2. Manifests in `k8s/`: Deployment + Service per component, **resource requests/limits, readiness and liveness probes**, and config from ConfigMaps/Secrets (Gitar's `k8s-manifest-review` rule checks this). Expose the web app as NodePort 30080.
-3. Autoscaling: add a HorizontalPodAutoscaler. kind has no metrics-server by default, so install it for the HPA to work.
-4. Rollouts: do at least one canary or blue-green release, e.g. two Deployments behind one Service with weighted replicas, or Argo Rollouts.
-5. GitOps: deploy from git (Argo CD or Flux watching `k8s/`) rather than ad-hoc `kubectl apply`.
-6. Run Radar's audit and fix what it flags. Keep the before/after for the demo.
-7. If organizers give us a namespace on their cluster, point `kubectl` at that kubeconfig and restart Radar against it.
+**How we ship (GitOps)**
+1. Change code or `deploy/` in a PR; Gitar reviews; merge to `main`. Nobody, human or bot, pushes to `main`.
+2. `.github/workflows/deploy.yaml` (`build-and-deploy`) builds `backend/` into `ghcr.io/jacob-erard-professional/wemakedevs2026:<sha7>` and `frontend/` (Expo web export behind nginx) into `ghcr.io/jacob-erard-professional/wemakedevs2026-web:<sha7>`, then force-pushes main's `deploy/` with both tags pinned to the **`deploy` branch**. Never edit the `deploy` branch by hand.
+3. Argo CD Application `app` in **`team-wearedevs`** (not `argocd`) syncs `deploy/` from the `deploy` branch. Apply `argocd/application.yaml` once with `apply_resource`.
+4. After a merge: check the workflow went green, sync/inspect the Application via `manage_gitops`, `wait_for` the rollout, and confirm the live pods run the new tag. Don't apply or patch Argo CD-owned manifests on the cluster; self-heal reverts them.
+5. Secrets: Secret `app-env` holds ES, OpenAI, organizer and OTLP values. A human creates it with `KUBECONFIG=~/cnh-kubeconfig ./scripts/push-secrets.sh`; never put a value in git, a chat or logs. Restart the app with `manage_workload` after changing it.
+6. Every manifest needs requests/limits and probes (Gitar's `k8s-manifest-review` rule). The Service must stay `app`, port 80: the platform routes the public URL to it.
+7. Two workloads: Deployment/Service **`app`** is the frontend (nginx serving the web build, probe `/healthz`), and it proxies **`/api/*`** to Deployment/Service **`backend`** (FastAPI, probe `/health`) with the `/api` prefix stripped. So https://wearedevs.cnh.radarhq.io/api/health is the backend's `/health`. Secret `app-env` is only mounted on `backend`.
 
 **How to use it while building**
-- Prefer Radar's MCP tools over raw kubectl for reads: issues, diagnose, get_changes, get_resource, list_resources, search, workload/pod logs, events.
-- When something breaks, start an AI investigation in Radar (or ask through MCP), apply the fix in a PR, and capture it for the demo.
+- Prefer Radar's MCP tools over kubectl: `issues`, `diagnose`, `get_changes`, `get_resource`, `list_resources`, `search`, `get_workload_logs`, `get_events`.
+- When something breaks, read the evidence first, then suggest a hosted AI investigation (`start_investigation`, only when a human asks). Fix in a PR and capture it for the demo. Don't break things on purpose; the Radar judges say so.
+- Checks: `get_cluster_audit` for `team-wearedevs`. The "before" is `docs/demo/radar-checks-before.png`; fix findings on our workloads, leave the pre-installed platform's alone.
+- Known noise on every team's cluster: the CoreDNS rewrite issue in `kube-system`, early start-up warnings, and the "upgrade Radar" prompt. Ignore them.
 
 Docs: [docs](https://radarhq.io/docs) · [install](https://radarhq.io/docs/install) · [MCP](https://radarhq.io/docs/features/mcp) · [AI investigations](https://radarhq.io/product/ai-investigations) · [GitHub](https://github.com/skyhook-io/radar) · [Discord](https://radarhq.io/community/chat)
 

@@ -1,20 +1,28 @@
-export type TimeRange = { start: number; end: number };
+export type TimeRange = { start: number; end: number; date?: string };
 
 export type Talk = TimeRange & {
   id: string;
   title: string;
   track: string;
   room: string;
+  abstract?: string;
+  startsAt?: string;
 };
 
-export type Conference = { name: string; code: string; talks: Talk[] };
+export type Conference = { name: string; code: string; talks: Talk[]; sample?: true };
+
+// A picked résumé. expo-document-picker gives a `file` on web and a `uri` on native; the
+// document itself is only ever sent to /save-user-data, which extracts text and discards it.
+export type ResumeAsset = { uri: string; name: string; mimeType?: string; file?: File };
 
 export type Attendee = {
   name: string;
+  email: string;
   bio: string;
   interests: string;
+  lookingFor: string;
   linkedin: string;
-  resumeName: string;
+  resume?: ResumeAsset;
   resumePublic: boolean;
   discoverable: boolean;
   unavailable: TimeRange[];
@@ -27,8 +35,19 @@ export function parseTime(value: string) {
 }
 
 export function formatTime(minutes: number) {
-  const hour = Math.floor(minutes / 60);
+  const hour = Math.floor(minutes / 60) % 24;
   return `${hour % 12 || 12}:${String(minutes % 60).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
+const venueDay = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Denver', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+export function talkDay(timestamp?: string) {
+  const time = Date.parse(timestamp ?? '');
+  if (!Number.isFinite(time)) return undefined;
+  const parts = venueDay.formatToParts(time);
+  return ['year', 'month', 'day'].map((type) => parts.find((part) => part.type === type)?.value).join('-');
 }
 
 export function parseSchedule(text: string) {
@@ -60,7 +79,7 @@ export function matchingTopics(profile: Attendee, topics: string[]) {
 
 export function recommendTalks(talks: Talk[], profile: Attendee) {
   return talks
-    .filter((talk) => !profile.unavailable.some((range) => overlaps(talk, range)))
+    .filter((talk) => !profile.unavailable.some((range) => (!range.date || range.date === talkDay(talk.startsAt)) && overlaps(talk, range)))
     .map((talk) => ({ ...talk, matched: matchingTopics(profile, [talk.track]).length > 0 }))
     .sort((a, b) => Number(b.matched) - Number(a.matched) || a.start - b.start);
 }

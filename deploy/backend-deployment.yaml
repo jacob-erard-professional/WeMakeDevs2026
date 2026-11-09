@@ -1,0 +1,71 @@
+# FastAPI backend. Reached from the browser through the frontend's nginx at /api/* only.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  # Remove this line if an HPA takes over scaling, or Argo CD and the HPA fight.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: backend
+          image: backend
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: OTEL_SERVICE_NAME
+              value: conference-api
+            # The frontend's nginx serves the API under /api and strips the prefix;
+            # uvicorn reads UVICORN_ROOT_PATH (= --root-path) so FastAPI builds /api/docs and
+            # openapi.json links with the prefix.
+            - name: UVICORN_ROOT_PATH
+              value: /api
+            # Public site origin for join_url in /confirm-schedule (a frontend route, so no /api).
+            - name: PUBLIC_BASE_URL
+              value: https://wearedevs.cnh.radarhq.io
+            # Lets local Expo web dev call the live API. Read by the CORS middleware from PR #25;
+            # until that lands it is inert.
+            - name: CORS_ORIGINS
+              value: http://localhost:8081,http://localhost:19006
+          # ES_URL, ES_API_KEY, OPENAI_API_KEY and OTEL_EXPORTER_OTLP_* come
+          # from Secret app-env, created outside git by scripts/push-secrets.sh.
+          envFrom:
+            - secretRef:
+                name: app-env
+                optional: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop: ["ALL"]
