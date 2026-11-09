@@ -146,9 +146,10 @@ Elasticsearch is the search engine and vector database behind our search, recomm
 - Smart use of search: keyword, semantic, vector or hybrid.
 
 **Already set up**
-- Elasticsearch 9.5.5 + Kibana via start-local in `../elastic-start-local` (trial with all features until Nov 29, then the free Basic license).
-- `.env`: `ES_URL=http://localhost:9200` and `ES_API_KEY`. From pods use `http://elasticsearch:9200`: `dev-up.sh` connects the container to the kind network and applies `k8s/elasticsearch-bridge.yaml.tpl`.
-- Kibana at http://localhost:5601 (user `elastic`, password in `../elastic-start-local/.env`).
+- A shared **Elastic Cloud Serverless** project; nothing runs locally.
+- `.env`: `ES_URL` (the project endpoint, in `.env.example`) and `ES_API_KEY` (your own or the shared key, never committed). Same `ES_URL` from this machine and from pods: `dev-up.sh` creates the `elasticsearch` Secret with both values; pods load it with `envFrom: [{secretRef: {name: elasticsearch}}]`.
+- Kibana is part of the cloud project; open it from the Elastic Cloud console.
+- Serverless: don't set `number_of_shards` / `number_of_replicas` in index settings (rejected). `semantic_text` uses Elastic-hosted inference endpoints by default, no local ML allocation.
 
 **How to set it up in the app**
 1. Client: `uv add elasticsearch` and connect with `Elasticsearch(os.environ["ES_URL"], api_key=os.environ["ES_API_KEY"])`.
@@ -158,7 +159,7 @@ Elasticsearch is the search engine and vector database behind our search, recomm
 5. RAG: retrieve abstracts from Elasticsearch, then answer with OpenAI. Trace both steps.
 6. Use Kibana Dev Tools to inspect queries and relevance while tuning.
 
-Docs: [start-local](https://github.com/elastic/start-local) · [get started with search](https://www.elastic.co/docs/solutions/search/get-started)
+Docs: [Serverless Elasticsearch](https://www.elastic.co/docs/deploy-manage/deploy/elastic-cloud/serverless) · [get started with search](https://www.elastic.co/docs/solutions/search/get-started)
 
 ---
 

@@ -10,29 +10,35 @@ Track details and resources: https://wemakedevs.org/hackathons/cnh/resources
 | Review conventions, rules, auto-apply criteria | `.gitar/` | Sonar / Gitar |
 | CI (ruff + pytest once `pyproject.toml` exists; manifest validation) | `.github/workflows/ci.yml` | Sonar / Gitar |
 | Local kind cluster config (app NodePort 30080 → localhost:8081) | `k8s/kind-config.yaml` | Radar |
-| In-cluster `elasticsearch:9200` Service pointing at start-local | `k8s/elasticsearch-bridge.yaml.tpl` | Elasticsearch |
+| `elasticsearch` Secret (ES_URL + ES_API_KEY) for pods, created from `.env` | `scripts/dev-up.sh` | Elasticsearch |
 | Env var template (OpenAI, Elasticsearch, Dash0 OTLP) | `.env.example` | all |
 | Radar MCP server for Claude Code | `.mcp.json` | Radar |
 | Start/stop everything | `scripts/dev-up.sh`, `scripts/dev-down.sh` | all |
 
-Installed on this machine: `kubectl`, `kind`, `kubectl-radar` (in `~/.local/bin`) and
-Elasticsearch + Kibana via start-local in `../elastic-start-local` (trial license
-until Nov 29, then it drops to the free Basic license).
+Installed on this machine: `kubectl`, `kind`, `kubectl-radar` (in `~/.local/bin`).
+Elasticsearch is a shared **Elastic Cloud Serverless** project (nothing to run locally):
+`ES_URL` is in `.env.example`; put your API key in `.env` as `ES_API_KEY` (create one in
+the project's Manage/Kibana → API keys, or use the shared key passed around out-of-band).
 
-`scripts/dev-up.sh` also needs `curl` and `envsubst` (from gettext:
-`sudo apt install gettext-base` on Debian/Ubuntu, `brew install gettext` on macOS).
+`scripts/dev-up.sh` also needs `curl`.
 
 ## Daily use
 
 ```sh
-./scripts/dev-up.sh            # kind cluster + Elasticsearch/Kibana + Radar
-./scripts/dev-down.sh          # stop Radar and Elasticsearch (cluster keeps running)
+./scripts/dev-up.sh            # kind cluster + elasticsearch Secret + Radar
+./scripts/dev-down.sh          # stop Radar (cluster keeps running)
 ./scripts/dev-down.sh --delete # also delete the cluster
 ```
 
 - Radar UI: http://localhost:9280
-- Kibana: http://localhost:5601 (user `elastic`, password in `../elastic-start-local/.env`)
-- Elasticsearch: `http://localhost:9200` from this machine, `http://elasticsearch:9200` from pods
+- Elasticsearch: `ES_URL` from `.env`, same URL from this machine and from pods.
+  `dev-up.sh` creates the `elasticsearch` Secret (`ES_URL`, `ES_API_KEY`) in the cluster;
+  pods use `envFrom: [{secretRef: {name: elasticsearch}}]`. It prints the HTTP status of a
+  test request (200 = key works, 401 = fix `ES_API_KEY`).
+- Kibana: part of the cloud project; open it from the Elastic Cloud console.
+- Serverless notes: don't set `number_of_shards` / `number_of_replicas` in index settings
+  (Serverless rejects them); `semantic_text` uses Elastic-hosted inference endpoints by
+  default, no local ML allocation needed.
 
 ## You still need to do
 

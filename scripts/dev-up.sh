@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Bring up the local hackathon stack:
 #   1. kind cluster "wemakedevs2026" (Radar + Elasticsearch tracks)
-#   2. Elasticsearch + Kibana from start-local, reachable from pods as http://elasticsearch:9200
+#   2. `elasticsearch` Secret (ES_URL + ES_API_KEY from .env) so pods can reach the
+#      shared Elastic Cloud Serverless project; Kibana lives in that cloud project
 #   3. Radar UI + MCP at http://localhost:9280 (MCP: /mcp)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLUSTER=wemakedevs2026
-ES_DIR="${ES_DIR:-$REPO_ROOT/../elastic-start-local}"
-ES_CONTAINER=es-local-dev
+ENV_FILE="$REPO_ROOT/.env"
 
-for bin in docker kind kubectl kubectl-radar envsubst curl; do
+for bin in docker kind kubectl kubectl-radar curl; do
   command -v "$bin" >/dev/null || { echo "Missing $bin. See SETUP.md." >&2; exit 1; }
 done
 
@@ -21,16 +21,28 @@ else
 fi
 kubectl config use-context "kind-$CLUSTER" >/dev/null
 
-if [ -x "$ES_DIR/start.sh" ]; then
-  (cd "$ES_DIR" && ./start.sh)
-  # Join the ES container to kind's Docker network and point an in-cluster Service at it.
-  docker network connect kind "$ES_CONTAINER" 2>/dev/null || true
-  ES_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "$ES_CONTAINER")"
-  ES_IP="$ES_IP" envsubst < "$REPO_ROOT/k8s/elasticsearch-bridge.yaml.tpl" | kubectl apply -f -
-  echo "Elasticsearch: http://localhost:9200 from this machine, http://elasticsearch:9200 from pods"
-  echo "Kibana:        http://localhost:5601 (credentials in $ES_DIR/.env)"
+# Read one KEY=value line from .env without sourcing it (values may contain spaces).
+# Strips surrounding single/double quotes. Never echoes the value.
+env_value() {
+  [ -f "$ENV_FILE" ] || return 0
+  { grep -m1 -E "^[[:space:]]*$1=" "$ENV_FILE" || true; } \
+    | sed -E "s/^[[:space:]]*$1=//; s/^[[:space:]]+//; s/[[:space:]]+\$//; s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/"
+}
+
+ES_URL="$(env_value ES_URL)"
+ES_API_KEY="$(env_value ES_API_KEY)"
+
+if [ -n "$ES_URL" ] && [ -n "$ES_API_KEY" ]; then
+  kubectl create secret generic elasticsearch \
+    --from-literal=ES_URL="$ES_URL" \
+    --from-literal=ES_API_KEY="$ES_API_KEY" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  code="$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
+    -H "Authorization: ApiKey $ES_API_KEY" "$ES_URL/" || true)"
+  echo "Elasticsearch: HTTP ${code:-000} from ES_URL (200 = key works, 401 = check ES_API_KEY in .env)"
+  echo "Pods: envFrom the 'elasticsearch' Secret for ES_URL and ES_API_KEY"
 else
-  echo "Elasticsearch not installed at $ES_DIR; skipping. See SETUP.md." >&2
+  echo "ES_URL and/or ES_API_KEY not set in .env; skipping the elasticsearch Secret. See SETUP.md." >&2
 fi
 
 if curl -fs -o /dev/null http://localhost:9280/; then
