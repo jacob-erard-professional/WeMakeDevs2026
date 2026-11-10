@@ -13,8 +13,8 @@ images:
   # Frontend (frontend/Dockerfile): Service app, the public URL.
   - name: app
     newName: ghcr.io/jacob-erard-professional/wemakedevs2026-web
-    newTag: latest
+    newTag: 6183e3a
   # Backend (backend/Dockerfile): Service backend, reached at /api/*.
   - name: backend
     newName: ghcr.io/jacob-erard-professional/wemakedevs2026
-    newTag: latest
+    newTag: 6183e3a
