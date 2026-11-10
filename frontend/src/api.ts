@@ -24,6 +24,11 @@ export type ParsedTalk = {
   start_time: string; end_time: string;
 };
 export type ArchiveTalk = { title: string; conference?: string; year?: number; url?: string; video_url?: string };
+export type CatalogSource = 'published' | 'archive';
+export type CatalogEvent = { id: string; name: string; talk_count: number; first_start?: string; last_end?: string; year?: number };
+export type CatalogTalk = ArchiveTalk & {
+  id: string; event_id?: string; abstract?: string; speakers: string[]; tracks: string[]; room?: string; start?: string;
+};
 
 // GET /talks/search over the public past-talk archive (backend `search_archive_talks`).
 export type ArchiveSearchTalk = ArchiveTalk & {
@@ -156,6 +161,24 @@ export async function searchSuggestedPeople(conferenceId: string, token: string,
   return response.json() as Promise<LiveRecommendations['attendees']>;
 }
 
+export async function refreshSuggestedPeople(conferenceId: string, token: string, signal: AbortSignal) {
+  const response = await request(`${apiBase}/conferences/${encodeURIComponent(conferenceId)}/people/recommend`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+  if (!response.ok) throw await apiError(response, 'Could not refresh people suggestions.');
+  return response.json() as Promise<LiveRecommendations['attendees']>;
+}
+
+export async function sendConnectionRequest(conferenceId: string, recipientId: string, token: string) {
+  const response = await request(`${apiBase}/request-connection`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conference_id: conferenceId, recipient_id: recipientId }),
+  });
+  if (!response.ok) throw await apiError(response, 'Could not send the connection request.');
+}
+
 async function resumePart(resume: ResumeAsset): Promise<Blob | { uri: string; name: string; type: string }> {
   const type = resume.mimeType || 'application/pdf';
   if (Platform.OS !== 'web') return { uri: resume.uri, name: resume.name, type };
@@ -239,6 +262,25 @@ export function normalizeRecommendations(value: unknown): LiveRecommendations {
 async function apiError(response: Response, fallback: string) {
   const body = await response.json().catch(() => null) as { detail?: unknown } | null;
   return new Error(typeof body?.detail === 'string' ? body.detail : fallback);
+}
+
+export async function loadCatalogEvents(source: CatalogSource, signal: AbortSignal) {
+  const response = await request(`${apiBase}/catalog/events?source=${source}`, { signal });
+  if (!response.ok) throw await apiError(response, 'Could not load conferences.');
+  const result = await response.json() as { events: CatalogEvent[] };
+  return result.events;
+}
+
+export async function searchCatalogTalks(source: CatalogSource, query: string, eventId: string | undefined,
+  offset: number, signal: AbortSignal) {
+  const response = await request(`${apiBase}/catalog/talks/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, query, event_id: eventId, offset }),
+    signal,
+  });
+  if (!response.ok) throw await apiError(response, 'Could not load talks.');
+  return response.json() as Promise<{ talks: CatalogTalk[]; next_offset: number | null }>;
 }
 
 export async function createLiveConference(name: string): Promise<OrganizerSession> {

@@ -2,10 +2,7 @@
 
 React Native and TypeScript app for conference planning and attendee discovery.
 
-To try the app without FastAPI:
-
-- Choose **I’m an attendee**, **Join sample conference**, then **Use sample profile**. Continue through availability to see a schedule, talk suggestions, and people recommendations.
-- Choose **I’m an organizer** and **Try sample organizer flow**. Continue with the prefilled event and schedule, preview and publish it, then select **Try attendee check-in**. The sample event and QR are for this app session.
+Choose **Event archive** to browse published conferences and historical events, or **Search Talks** to search either collection. Both views read from the configured FastAPI instance.
 
 Choose **I am an organizer** to enter event details and import a link, image, PDF, or structured text schedule. Publishing through FastAPI creates an attendee link. Tap the QR to present it full screen and share the link from the presentation. Attendees can follow the link in a browser, type the event code, or scan it from the native app. The event schedule opens session details and can look up similar recordings after attendee check-in.
 

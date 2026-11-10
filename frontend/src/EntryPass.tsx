@@ -66,14 +66,13 @@ function PassCode({ link, size, branded = false }: { link: string; size: number;
   );
 }
 
-export function EntryPass({ name, code, link, details, onReset, onBack, onTrySample }: {
+export function EntryPass({ name, code, link, details, onReset, onBack }: {
   name: string;
   code: string;
   link: string;
   details?: string;
   onReset: () => void;
   onBack?: () => void;
-  onTrySample?: () => void;
 }) {
   const [presenting, setPresenting] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -133,7 +132,7 @@ export function EntryPass({ name, code, link, details, onReset, onBack, onTrySam
     );
   }
 
-  const shareActions = !onTrySample && (
+  const shareActions = (
     <>
       {canShare ? <Action title="Share join link" onPress={() => void share()} secondary /> : null}
       {web ? <Action title="Copy join link" onPress={() => void copyLink()} secondary /> : null}
@@ -142,7 +141,7 @@ export function EntryPass({ name, code, link, details, onReset, onBack, onTrySam
 
   return (
     <View style={styles.stack}>
-      <Label>{onTrySample ? 'Sample conference published' : 'Live · Ready to share'}</Label>
+      <Label>Live · Ready to share</Label>
       <Heading large>{name}</Heading>
       {details ? <Copy>{details}</Copy> : null}
       <View style={[pass.card, stacked && pass.cardStacked]}>
@@ -155,8 +154,7 @@ export function EntryPass({ name, code, link, details, onReset, onBack, onTrySam
         <View style={pass.side}>
           {passInfo()}
           <View style={pass.actions}>
-            {onTrySample ? <Action title="Try attendee check-in" onPress={onTrySample} /> : null}
-            {web ? <Action title="Copy join link" onPress={() => void copyLink()} secondary={!!onTrySample} /> : null}
+            {web ? <Action title="Copy join link" onPress={() => void copyLink()} /> : null}
             {canShare && !web ? <Action title="Share join link" onPress={() => void share()} secondary /> : null}
             <Action title="Open full-screen QR" onPress={openPresentation} secondary />
             {onBack ? <Action title="Back to organizer dashboard" onPress={onBack} secondary /> : null}
@@ -175,7 +173,7 @@ export function EntryPass({ name, code, link, details, onReset, onBack, onTrySam
                 <Action title="Browser full screen" onPress={() => void fullscreen()} secondary />
               ) : null}
             </View>
-            <Label>{onTrySample ? 'Sample QR · preview only' : 'Scan to join'}</Label>
+            <Label>Scan to join</Label>
             <Text accessibilityRole="header" style={[styles.heading, styles.largeHeading, pass.title]}>{name}</Text>
             <View accessible accessibilityRole="image" accessibilityLabel={`Join QR code for ${name}`}>
               <PassCode link={link} size={qrSize} branded />

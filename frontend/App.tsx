@@ -6,10 +6,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import type { Attendee, Conference } from './src/conference';
 import { formatTime, talkDay } from './src/conference';
-import { demoConference } from './src/demoConference';
-import { conferenceFromSchedule, joinLiveConference, loadUpcomingTalks, normalizeRecommendations, saveLiveProfile, venueMinutes } from './src/api';
+import { joinLiveConference, loadUpcomingTalks, normalizeRecommendations, saveLiveProfile, sendConnectionRequest, venueMinutes } from './src/api';
 import type { LiveRecommendations, UpcomingTalk } from './src/api';
-import type { ParsedTalk } from './src/api';
 import { Flow, MotionPreferences } from './src/Flow';
 import { JoinScanner } from './src/JoinScanner';
 import { joinPath, parseJoinCode, parseJoinPath } from './src/joinLink';
@@ -70,8 +68,7 @@ function UpcomingTalks({ onOpen, disabled }: { onOpen: (conferenceId: string) =>
   );
 }
 
-function JoinConference({ conferences, linkCode, onJoin }: {
-  conferences: Conference[];
+function JoinConference({ linkCode, onJoin }: {
   linkCode?: string;
   onJoin: (conference: Conference) => void;
 }) {
@@ -91,7 +88,7 @@ function JoinConference({ conferences, linkCode, onJoin }: {
     request.current = controller;
     setBusy(true);
     try {
-      const conference = conferences.find((item) => item.code === parsed) ?? await joinLiveConference(parsed, controller.signal);
+      const conference = await joinLiveConference(parsed, controller.signal);
       if (!controller.signal.aborted) onJoin(conference);
     } catch (reason) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Could not join the conference.');
@@ -133,7 +130,6 @@ function JoinConference({ conferences, linkCode, onJoin }: {
                 <Action title={busy ? 'Opening conference…' : 'Join conference'} onPress={() => join(code)} disabled={busy} />
                 {Platform.OS !== 'web' ? <Action title="Scan QR code" onPress={() => setScanning(true)} disabled={busy} secondary /> : null}
               </View>
-              <Action title="Join sample conference" onPress={() => onJoin(demoConference)} disabled={busy} secondary />
             </Section>
           </View>
           <UpcomingTalks disabled={busy} onOpen={(conferenceId) => { setCode(conferenceId); void join(conferenceId); }} />
@@ -149,8 +145,6 @@ function savedSection(value?: string): RecommendationSection {
 }
 
 export default function App() {
-  const [conferences, setConferences] = useState([demoConference]);
-  const nextSample = useRef(1);
   const { page, path, navigate } = useRoute();
   const [conference, setConference] = useState<Conference>();
   // Saved profile and draft are scoped to the conference in the current route.
@@ -201,19 +195,22 @@ export default function App() {
     setRecommendations(saved && stored?.recommendations ? normalizeRecommendations(stored.recommendations) : undefined);
     setProfile(saved?.profile);
     setDraft(unsaved?.profile ?? saved?.profile);
-    setPreviousResume(resumeName ? { name: resumeName, onServer: resumeName === saved?.resumeName && !next.sample } : undefined);
+    setPreviousResume(resumeName ? { name: resumeName, onServer: resumeName === saved?.resumeName } : undefined);
     setSection(savedSection(stored?.section));
-    attendeeSessions.update(next.code, { conferenceName: next.name, sample: !!next.sample, lastOpenedAt: Date.now() });
-    setRemembered(attendeeSessions.list());
+    if (step !== 'schedule' || stored) {
+      attendeeSessions.update(next.code, { conferenceName: next.name, lastOpenedAt: Date.now() });
+      setRemembered(attendeeSessions.list());
+    }
     return { returning: !!saved && !unsaved };
   }
 
   function changeDraft(next: Attendee) {
-    const code = activeConference?.code;
-    if (!code || scope.current?.code !== code) return;
+    if (!activeConference || scope.current?.code !== activeConference.code) return;
+    const { code, name } = activeConference;
     setDraft(next);
     if (next.resume) setPreviousResume(undefined);
     attendeeSessions.update(code, {
+      conferenceName: name,
       draft: toStoredProfile(next, previousResume?.name),
       draftStep: step === 'availability' ? 'availability' : 'about',
     });
@@ -229,17 +226,6 @@ export default function App() {
     }
     setRemembered(attendeeSessions.list());
     return true;
-  }
-
-  function publishSample(name: string, talks: ParsedTalk[]) {
-    const code = `sample-${nextSample.current++}`;
-    const event = conferenceFromSchedule({
-      conference_id: code,
-      name,
-      talks: talks.map((talk, index) => ({ ...talk, talk_id: `session-${index + 1}` })),
-    });
-    setConferences((current) => [...current, { ...event, sample: true }]);
-    return code;
   }
 
   // Public site pages come from the URL; /join and /join/<code> show the attendee flow.
@@ -259,17 +245,16 @@ export default function App() {
     let id = attendeeId;
     let live: LiveRecommendations | undefined;
     try {
-      if (!activeConference.sample) {
-        const result = await saveLiveProfile(activeConference, next, attendeeToken);
-        token = result.attendee_token ?? token;
-        id = result.attendee_id;
-        live = result.recommendations;
-      }
+      const result = await saveLiveProfile(activeConference, next, attendeeToken);
+      token = result.attendee_token ?? token;
+      id = result.attendee_id;
+      live = result.recommendations;
     } finally {
       savingProfiles.current.delete(code);
     }
     const resumeName = next.resume?.name ?? previousResume?.name;
     attendeeSessions.update(code, {
+      conferenceName: activeConference.name, lastOpenedAt: Date.now(),
       attendeeId: id, attendeeToken: token, saved: toStoredProfile(next, previousResume?.name),
       draft: undefined, draftStep: undefined, recommendations: live,
     });
@@ -281,7 +266,7 @@ export default function App() {
     setAttendeeToken(token);
     setProfile(saved);
     setDraft(saved);
-    setPreviousResume(resumeName ? { name: resumeName, onServer: !activeConference.sample } : undefined);
+    setPreviousResume(resumeName ? { name: resumeName, onServer: true } : undefined);
     if (currentPath.current === path) navigate(joinPath(code, resumeTalk ? 'schedule' : 'plan'));
   }
 
@@ -299,7 +284,7 @@ export default function App() {
     attendeeSessions.update(activeConference.code, { draft: undefined, draftStep: undefined });
     setDraft(profile);
     const name = stored?.saved?.resumeName;
-    setPreviousResume(name ? { name, onServer: !activeConference.sample } : undefined);
+    setPreviousResume(name ? { name, onServer: true } : undefined);
     setResumeTalk(undefined);
     setRemembered(attendeeSessions.list());
     navigate(joinPath(activeConference.code, 'plan'), { replace: true });
@@ -329,18 +314,19 @@ export default function App() {
             <Flow step={screen} fadeOnly>
               {page === 'home' ? <Landing navigate={navigate} hasConferences={remembered.length > 0}
                 resumeConference={conference ? { name: conference.name, path: joinPath(conference.code, profile ? 'plan' : 'about') } : undefined} />
-              : page === 'events' ? <PastEvents /> : page === 'talks' ? (
-                <PastTalks onBrowseSchedule={() => navigate(conference ? joinPath(conference.code, 'schedule') : '/join')} />
+              : page === 'events' ? <PastEvents navigate={navigate} /> : page === 'talks' ? (
+                <PastTalks onBrowseSchedule={() => navigate(conference ? joinPath(conference.code, 'schedule') : '/join')}
+                  onConference={(code) => navigate(joinPath(code, 'schedule'))} />
               )
               : page === 'myConferences' ? <MyConferences conferences={remembered} navigate={navigate} onForget={forgetConference} />
               : page === 'organizers' ? (
                 <OrganizersPage>
-                  <Organizer onPublishSample={publishSample} onTrySample={(code) => navigate(joinPath(code))} />
+                  <Organizer />
                 </OrganizersPage>
               )
               : !activeConference ? (
                 <Container style={layout.content}>
-                  <JoinConference key={linkCode ?? 'manual'} conferences={conferences} linkCode={linkCode} onJoin={(next) => {
+                  <JoinConference key={linkCode ?? 'manual'} linkCode={linkCode} onJoin={(next) => {
                     const { returning } = changeConference(next);
                     // A returning attendee who already saved lands on their plan, not the form.
                     if (returning && step === 'about') navigate(joinPath(next.code, 'plan'), { replace: linkCode === next.code });
@@ -355,7 +341,7 @@ export default function App() {
                     <Label>{activeConference.name}</Label>
                     <Action title="Switch conference" onPress={() => navigate('/my-conferences')} secondary />
                     {screen === 'schedule' ? (
-                      <Action title={profile ? 'Back to my plan' : 'Back to check-in'}
+                      <Action title={profile ? 'Back to my plan' : 'Check in to this conference'}
                         onPress={() => { setResumeTalk(undefined); navigate(joinPath(activeConference.code, profile ? 'plan' : 'about')); }} secondary />
                     ) : !profile ? (
                       <Action title="Browse event schedule"
@@ -381,7 +367,13 @@ export default function App() {
                         attendeeSessions.update(activeConference.code, { section: next });
                       }}
                       onEdit={editProfile} onPeople={keepPeople}
-                      onRequest={(id) => setRequested((current) => current.includes(id) ? current : [...current, id])} />
+                      onRequest={async (id) => {
+                        if (!attendeeToken) throw new Error('Check in again before requesting a connection.');
+                        await sendConnectionRequest(activeConference.code, id, attendeeToken);
+                        if (scope.current?.code === activeConference.code) {
+                          setRequested((current) => current.includes(id) ? current : [...current, id]);
+                        }
+                      }} />
                   ) : null}
                 </View>
                 </Container>

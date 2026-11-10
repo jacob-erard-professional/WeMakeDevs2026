@@ -1,12 +1,12 @@
 // Search the public past-talk archive (~25k KubeCon and PyVideo talks) through GET /talks/search.
 // Text queries are hybrid (keyword + semantic) on the server; an empty query browses newest first.
 import { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { ArchiveFacet, ArchiveSearchResult, ArchiveSearchTalk } from '../api';
 import { searchArchiveTalks } from '../api';
-import { Action, Field, Heading, Message, TalkDetails, styles } from '../ui';
-import { page } from './PastEvents';
+import { Action, Field, Heading, Message, TalkDetails, colors, styles } from '../ui';
+import { CatalogTalks } from './CatalogTalks';
 import { Container } from './SiteShell';
 
 const SOURCES = [{ value: 'kubecon', label: 'KubeCon' }, { value: 'pyvideo', label: 'PyVideo' }];
@@ -51,7 +51,7 @@ function summary(result: ArchiveSearchResult, searching: boolean, shown: number)
   return `${count.format(result.total)} talks match. Showing ${count.format(shown)} of the top ${reachable} by relevance.`;
 }
 
-export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }) {
+function ArchiveTalks() {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [track, setTrack] = useState<string>();
@@ -94,8 +94,7 @@ export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }
 
   const firstLoad = loading && !result;
   return (
-    <Container style={page.block}>
-      <Heading large>Search Talks</Heading>
+    <>
       <Field label="Search talks, speakers, or events" value={query} onChangeText={setQuery} autoCorrect={false}
         placeholder="Try “something on eBPF and security”" />
       <View accessibilityLabel="Filter by source" style={page.filters}>
@@ -114,9 +113,6 @@ export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }
           ))}
         </View>
       ) : null}
-      <View style={styles.row}>
-        <Action title="Browse my event schedule" onPress={onBrowseSchedule} secondary />
-      </View>
       {error ? <Message error>{error}</Message> : null}
       {firstLoad ? <Message>Loading talks…</Message> : null}
       {result && !error ? <Message>{summary(result, Boolean(debounced), talks.length)}</Message> : null}
@@ -127,6 +123,53 @@ export function PastTalks({ onBrowseSchedule }: { onBrowseSchedule: () => void }
         <Action title={loading ? 'Loading…' : 'Show more talks'} disabled={loading}
           onPress={() => setPageNumber((n) => n + 1)} secondary />
       ) : null}
+    </>
+  );
+}
+
+export function PastTalks({ onBrowseSchedule, onConference }: {
+  onBrowseSchedule: () => void;
+  onConference: (id: string) => void;
+}) {
+  const [historical, setHistorical] = useState(true);
+  const [text, setText] = useState('');
+  const [query, setQuery] = useState('');
+
+  return (
+    <Container style={page.block}>
+      <Heading large>Search Talks</Heading>
+      <View style={styles.row}>
+        <Action title="Historical talks" selected={historical} onPress={() => setHistorical(true)} secondary />
+        <Action title="Conference schedules" selected={!historical} onPress={() => setHistorical(false)} secondary />
+        <Action title="Browse my event schedule" onPress={onBrowseSchedule} secondary />
+      </View>
+      {historical ? <ArchiveTalks /> : (
+        <>
+          <Field label="Search talks, speakers, or topics" value={text} onChangeText={setText} maxLength={160}
+            autoCorrect={false} returnKeyType="search" onSubmitEditing={() => setQuery(text.trim())} />
+          <View style={styles.row}>
+            <Action title="Search" onPress={() => setQuery(text.trim())} />
+          </View>
+          <CatalogTalks key={query} source="published" query={query} onConference={onConference} />
+        </>
+      )}
     </Container>
   );
 }
+
+const page = StyleSheet.create({
+  block: { paddingVertical: 56, gap: 22 },
+  list: { gap: 16 },
+  talk: { gap: 6, padding: 18, backgroundColor: colors.pale, borderRadius: 12 },
+  meta: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 4, alignItems: 'center' },
+  track: { color: colors.accent, fontSize: 13, fontWeight: '700', letterSpacing: 0.4, textTransform: 'uppercase' },
+  time: { color: colors.muted, fontSize: 14 },
+  talkTitle: { color: colors.ink, fontSize: 19, fontWeight: '700', lineHeight: 25 },
+  speakers: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  filters: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 8, rowGap: 8 },
+  chip: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white },
+  chipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { color: colors.ink, fontSize: 15, fontWeight: '600' },
+  chipTextSelected: { color: colors.white },
+  focused: { outlineColor: colors.ink, outlineWidth: 2, outlineOffset: 2, outlineStyle: 'solid' },
+});
